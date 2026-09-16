@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="es-CL">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MAERSK Storage Cost Dashboard</title>
+<link rel="stylesheet" href="./css/styles.css">
+</head>
+<body>
+
+<header class="app-header">
+  <div class="header-left">
+    <h1>MAERSK Storage Cost Dashboard</h1>
+    <p class="subtitle">Calculadora y proyección de costos de almacenamiento</p>
+  </div>
+  <div class="header-right">
+    <div class="header-meta">
+      <span>Última actualización: <b id="lastUpdate">—</b></span>
+      <span>Archivo 1: <b id="headerFile1">—</b></span>
+      <span>Archivo 2: <b id="headerFile2">—</b></span>
+    </div>
+  </div>
+</header>
+
+<nav class="tabs" id="tabsNav">
+  <button class="tab-btn active" data-tab="actualizar">Actualizar Inventario</button>
+  <button class="tab-btn" data-tab="dashboard">Dashboard</button>
+  <button class="tab-btn" data-tab="detalle">Detalle</button>
+  <button class="tab-btn" data-tab="periodo">Resumen por Período</button>
+  <button class="tab-btn" data-tab="calidad">Calidad de Datos</button>
+  <button class="tab-btn" data-tab="simulador">Simulador</button>
+  <button class="tab-btn" data-tab="config">Configuración</button>
+  <button class="tab-btn" data-tab="pruebas">Pruebas de Cálculo</button>
+</nav>
+
+<!-- ===================== PARÁMETROS DEL CÁLCULO (siempre visible) ===================== -->
+<section class="params-bar">
+  <div class="params-block">
+    <h3>VALOR UF DEL CÁLCULO</h3>
+    <div class="params-row">
+      <label>Fecha UF
+        <input type="date" id="cfgFechaUF">
+      </label>
+      <label>Valor UF
+        <input type="text" id="cfgValorUF" placeholder="$ 40.864,55">
+      </label>
+      <button id="btnRecalcularUF" class="btn btn-primary">RECALCULAR CON ESTA UF</button>
+      <span id="ufError" class="field-error"></span>
+    </div>
+  </div>
+  <div class="params-block">
+    <h3>PARÁMETROS</h3>
+    <div class="params-row">
+      <label>Fecha de corte
+        <input type="date" id="cfgFechaCorte">
+      </label>
+      <label>Fecha de proyección
+        <input type="date" id="cfgFechaProyeccion">
+      </label>
+      <div class="params-readonly" id="paramsReadout"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== FILTROS ===================== -->
+<section class="filters-bar" id="filtersBar">
+  <label>Estado
+    <select id="filterEstado"><option value="">Todos</option><option value="ALMACENADO">Almacenado</option><option value="EN_PICKING">En picking / salida</option><option value="DESPACHADO">Despachado</option></select>
+  </label>
+  <label>Producto
+    <select id="filterProducto"><option value="">Todos</option></select>
+  </label>
+  <label>Location
+    <select id="filterLocation"><option value="">Todas</option></select>
+  </label>
+  <label>Fuente
+    <select id="filterFuente"><option value="">Todas</option></select>
+  </label>
+  <label>HU
+    <input type="text" id="filterHU" placeholder="Buscar HU...">
+  </label>
+  <button id="btnClearFilters" class="btn btn-ghost">Limpiar filtros</button>
+</section>
+
+<main>
+
+<!-- ===================== TAB: ACTUALIZAR INVENTARIO ===================== -->
+<section class="tab-panel active" id="tab-actualizar">
+  <div class="welcome-box" id="welcomeBox">
+    <h2>Bienvenido</h2>
+    <p>Carga las dos planillas de inventario MAERSK (hoja <b>INVENTARIO</b>) para comenzar. Los archivos se procesan 100% en tu navegador: nunca se suben a ningún servidor.</p>
+    <div class="assumptions-grid">
+      <div>1 HU = <b>1,8 m²</b></div>
+      <div>Tarifa = <b>0,26 UF/m²/mes</b></div>
+      <div>UF de referencia = <b>$40.864,55</b></div>
+      <div>Ciclo facturación = <b>día 28 al 27</b></div>
+      <div>Mes comercial = <b>30 días</b></div>
+    </div>
+    <p class="hint">Ingresa el valor UF que deseas utilizar para el cálculo en el panel superior "VALOR UF DEL CÁLCULO".</p>
+  </div>
+
+  <div class="upload-grid">
+    <div class="upload-panel" id="dropzone1">
+      <h3>PLANILLA 1</h3>
+      <p class="dz-hint">Arrastra aquí el archivo Excel o</p>
+      <input type="file" id="fileInput1" accept=".xlsx,.xls" hidden>
+      <button class="btn btn-primary" id="btnChoose1">Cargar / reemplazar archivo 1</button>
+      <div class="file-status" id="file1Status">
+        <div>Nombre: <b id="f1Name">—</b></div>
+        <div>Estado: <b id="f1State">Sin cargar</b></div>
+        <div>Registros: <b id="f1Rows">—</b></div>
+        <div>HU únicas: <b id="f1HU">—</b></div>
+        <div class="file-error" id="f1Error"></div>
+      </div>
+    </div>
+    <div class="upload-panel" id="dropzone2">
+      <h3>PLANILLA 2</h3>
+      <p class="dz-hint">Arrastra aquí el archivo Excel o</p>
+      <input type="file" id="fileInput2" accept=".xlsx,.xls" hidden>
+      <button class="btn btn-primary" id="btnChoose2">Cargar / reemplazar archivo 2</button>
+      <div class="file-status" id="file2Status">
+        <div>Nombre: <b id="f2Name">—</b></div>
+        <div>Estado: <b id="f2State">Sin cargar</b></div>
+        <div>Registros: <b id="f2Rows">—</b></div>
+        <div>HU únicas: <b id="f2HU">—</b></div>
+        <div class="file-error" id="f2Error"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="consolidated-box">
+    <h3>CONSOLIDADO</h3>
+    <div class="consolidated-grid" id="consolidatedSummary">
+      <div>HU únicas totales: <b id="csHUTotal">—</b></div>
+      <div>HU activas: <b id="csHUActivas">—</b></div>
+      <div>HU despachadas: <b id="csHUDespachadas">—</b></div>
+      <div>Duplicadas entre planillas: <b id="csDuplicadas">—</b></div>
+      <div>Conflictos detectados: <b id="csConflictos">—</b></div>
+    </div>
+    <div class="actions-row">
+      <button class="btn btn-primary" id="btnRecalcular">Recalcular</button>
+      <button class="btn btn-danger-ghost" id="btnLimpiar">Limpiar archivos</button>
+    </div>
+    <p id="reloadMsg" class="ok-msg" style="display:none;">Inventario actualizado correctamente</p>
+  </div>
+</section>
+
+<!-- ===================== TAB: DASHBOARD ===================== -->
+<section class="tab-panel" id="tab-dashboard">
+  <div class="empty-state" id="dashboardEmpty">Carga ambas planillas en la pestaña "Actualizar Inventario" para ver el dashboard.</div>
+  <div id="dashboardContent" style="display:none;">
+
+    <div class="two-col">
+      <div class="info-box">
+        <h3>DATOS DE INVENTARIO</h3>
+        <div id="infoInventario"></div>
+      </div>
+      <div class="info-box">
+        <h3>DATOS FINANCIEROS</h3>
+        <div id="infoFinanciero"></div>
+      </div>
+    </div>
+
+    <div class="info-box supuestos-box">
+      <h3>SUPUESTOS DEL CÁLCULO</h3>
+      <div class="assumptions-grid" id="supuestosGrid"></div>
+    </div>
+
+    <div class="kpi-grid" id="kpiGrid"></div>
+
+    <div class="projection-box">
+      <h3>PROYECCIÓN</h3>
+      <div class="projection-buttons">
+        <button class="btn btn-ghost" data-proy="cierre-actual">Proyectar al cierre actual</button>
+        <button class="btn btn-ghost" data-proy="proximo-cierre">Proyectar próximo cierre</button>
+        <button class="btn btn-ghost" data-proy="30">Proyectar +30 días</button>
+        <button class="btn btn-ghost" data-proy="60">Proyectar +60 días</button>
+        <button class="btn btn-ghost" data-proy="90">Proyectar +90 días</button>
+      </div>
+      <div class="kpi-grid" id="projectionGrid"></div>
+    </div>
+
+    <div class="charts-grid">
+      <div class="chart-card"><h4>HU activas por día</h4><canvas id="chartActivasPorDia"></canvas></div>
+      <div class="chart-card"><h4>m² ocupados por día</h4><canvas id="chartM2PorDia"></canvas></div>
+      <div class="chart-card"><h4>Costo acumulado por día (CLP)</h4><canvas id="chartCostoAcumPorDia"></canvas></div>
+      <div class="chart-card"><h4>Costo por período (CLP)</h4><canvas id="chartCostoPorPeriodo"></canvas></div>
+      <div class="chart-card"><h4>Ingresos vs. salidas de HU</h4><canvas id="chartIngresosSalidas"></canvas></div>
+      <div class="chart-card"><h4>Costo acumulado por producto (top 10)</h4><canvas id="chartCostoPorProducto"></canvas></div>
+      <div class="chart-card"><h4>Costo acumulado por Location (top 10)</h4><canvas id="chartCostoPorLocation"></canvas></div>
+      <div class="chart-card"><h4>Proyección de costo</h4><canvas id="chartProyeccion"></canvas></div>
+      <div class="chart-card"><h4>Distribución de antigüedad de HU</h4><canvas id="chartAntiguedad"></canvas></div>
+      <div class="chart-card"><h4>HU por estado</h4><canvas id="chartHUPorEstado"></canvas></div>
+    </div>
+
+    <div class="info-box">
+      <h3>ANTIGÜEDAD DE INVENTARIO ACTIVO</h3>
+      <div id="agingTableWrap"></div>
+    </div>
+
+    <div class="info-box">
+      <h3>REFERENCIAS RÁPIDAS DE COSTO DIARIO</h3>
+      <div id="quickRefs" class="assumptions-grid"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== TAB: DETALLE ===================== -->
+<section class="tab-panel" id="tab-detalle">
+  <div class="empty-state" id="detalleEmpty">Carga ambas planillas para ver el detalle por HU.</div>
+  <div id="detalleContent" style="display:none;">
+    <div class="table-toolbar">
+      <input type="text" id="detailSearch" placeholder="Buscar HU específica...">
+      <div class="toolbar-actions">
+        <button class="btn btn-ghost" id="btnExportDetailCSV">Exportar detalle CSV</button>
+        <button class="btn btn-ghost" id="btnExportDetailJSON">Exportar detalle JSON</button>
+        <button class="btn btn-ghost" id="btnExportPDF">Exportar dashboard a PDF</button>
+      </div>
+    </div>
+    <div id="detailTableWrap"></div>
+  </div>
+</section>
+
+<!-- ===================== TAB: RESUMEN POR PERÍODO ===================== -->
+<section class="tab-panel" id="tab-periodo">
+  <div class="empty-state" id="periodoEmpty">Carga ambas planillas para ver el resumen por período.</div>
+  <div id="periodoContent" style="display:none;">
+    <div class="table-toolbar">
+      <span class="hint">Ciclo de facturación: día 28 al 27</span>
+      <button class="btn btn-ghost" id="btnExportPeriodCSV">Exportar resumen período CSV</button>
+    </div>
+    <div id="periodSummaryWrap"></div>
+  </div>
+</section>
+
+<!-- ===================== TAB: CALIDAD DE DATOS ===================== -->
+<section class="tab-panel" id="tab-calidad">
+  <div class="empty-state" id="calidadEmpty">Carga ambas planillas para revisar la calidad de datos.</div>
+  <div id="calidadContent" style="display:none;">
+    <div class="table-toolbar">
+      <span class="hint">No se elimina ningún dato automáticamente; solo se reportan las inconsistencias.</span>
+      <button class="btn btn-ghost" id="btnExportQualityCSV">Exportar inconsistencias CSV</button>
+    </div>
+    <div id="qualitySummary"></div>
+    <div id="qualityList"></div>
+  </div>
+</section>
+
+<!-- ===================== TAB: SIMULADOR ===================== -->
+<section class="tab-panel" id="tab-simulador">
+  <div class="sim-grid">
+    <div class="info-box">
+      <h3>SIMULADOR 1 — Costo de almacenamiento</h3>
+      <div class="sim-form">
+        <label>Número de HU <input type="number" id="sim1HU" value="100" min="0"></label>
+        <label>Días almacenados <input type="number" id="sim1Dias" value="30" min="0"></label>
+        <label>m² por HU <input type="number" id="sim1M2" value="1.8" step="0.01" min="0"></label>
+        <label>Tarifa UF/m²/mes <input type="number" id="sim1Tarifa" value="0.26" step="0.001" min="0"></label>
+        <label>Valor UF <input type="text" id="sim1UF" value="40864.55"></label>
+        <button class="btn btn-primary" id="btnSim1Calc">Calcular</button>
+      </div>
+      <div id="sim1Output" class="sim-output"></div>
+    </div>
+
+    <div class="info-box">
+      <h3>SIMULADOR 2 — ¿Qué pasa si retiro X HU?</h3>
+      <div class="sim-form">
+        <label>HU actuales <input type="number" id="sim2HUActuales" value="500" min="0"></label>
+        <label>HU a retirar <input type="number" id="sim2HURetirar" value="100" min="0"></label>
+        <label>Fecha estimada de retiro <input type="date" id="sim2FechaRetiro"></label>
+        <label>Fecha de proyección <input type="date" id="sim2FechaProy"></label>
+        <button class="btn btn-primary" id="btnSim2Calc">Calcular</button>
+      </div>
+      <div id="sim2Output" class="sim-output"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== TAB: CONFIGURACIÓN ===================== -->
+<section class="tab-panel" id="tab-config">
+  <div class="info-box">
+    <h3>CONFIGURACIÓN</h3>
+    <div class="config-form">
+      <label>Valor UF <input type="text" id="cfgValorUF2"></label>
+      <label>Fecha UF <input type="date" id="cfgFechaUF2"></label>
+      <label>Tarifa UF/m²/mes <input type="number" step="0.001" id="cfgTarifaUFm2mes"></label>
+      <label>m² por HU <input type="number" step="0.01" id="cfgM2PorHU"></label>
+      <label>Mes comercial (días) <input type="number" id="cfgMesComercial"></label>
+      <label>Día inicio ciclo <input type="number" id="cfgDiaInicioCiclo" min="1" max="28"></label>
+      <label>Fecha de corte <input type="date" id="cfgFechaCorte2"></label>
+      <label>Fecha de proyección <input type="date" id="cfgFechaProyeccion2"></label>
+      <label>Metodología de días
+        <select id="cfgMetodologia">
+          <option value="A">A) Mes comercial de 30 días</option>
+          <option value="B">B) Días reales del período</option>
+        </select>
+      </label>
+    </div>
+    <button class="btn btn-primary" id="btnGuardarConfig">Guardar configuración</button>
+    <p class="hint">Se guarda en tu navegador (localStorage) solo la configuración: UF, fechas, tarifa y metodología. El inventario (Excel) nunca se guarda; deberás volver a cargarlo al reabrir la aplicación.</p>
+  </div>
+</section>
+
+<!-- ===================== TAB: PRUEBAS DE CÁLCULO ===================== -->
+<section class="tab-panel" id="tab-pruebas">
+  <div class="info-box">
+    <h3>Validación del ciclo de facturación (día 28 = inicio del nuevo período)</h3>
+    <div id="cycleTestOutput"></div>
+  </div>
+  <div class="info-box">
+    <h3>Casos de prueba de días y costos (calculados en vivo con las funciones reales)</h3>
+    <div id="calcTestOutput"></div>
+  </div>
+</section>
+
+</main>
+
+<footer class="app-footer">
+  <span>MAERSK Storage Cost Dashboard — procesamiento 100% local en el navegador. Ningún archivo Excel se sube a un servidor.</span>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="./js/config.js"></script>
+<script src="./js/format.js"></script>
+<script src="./js/excel.js"></script>
+<script src="./js/consolidate.js"></script>
+<script src="./js/calculations.js"></script>
+<script src="./js/charts.js"></script>
+<script src="./js/tables.js"></script>
+<script src="./js/exports.js"></script>
+<script src="./js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,38 @@
+{
+  "config": {
+    "uf_clp": 40864.55,
+    "fecha_uf": "2026-08-24",
+    "tarifa_uf_m2_mes": 0.26,
+    "m2_por_hu": 1.8,
+    "dias_mes_tarifa": 30,
+    "dia_inicio_periodo": 28,
+    "fecha_corte": "2026-09-16",
+    "metodologia_dias": "A"
+  },
+  "hu": [
+    {
+      "hu": "EJEMPLO-0001",
+      "date_inbound": "2026-08-05",
+      "date_picking": "2026-08-17",
+      "date_outbound": "2026-08-17",
+      "location": "DESPACHADO",
+      "producto": "100248",
+      "descripcion": "PRODUCTO DE EJEMPLO 700G",
+      "cantidad": 375,
+      "estado": "DESPACHADO",
+      "fuente": "ejemplo.xlsx"
+    },
+    {
+      "hu": "EJEMPLO-0002",
+      "date_inbound": "2026-08-20",
+      "date_picking": null,
+      "date_outbound": null,
+      "location": "B2-04-01-P1",
+      "producto": "100543",
+      "descripcion": "PRODUCTO DE EJEMPLO TOSTADAS",
+      "cantidad": 900,
+      "estado": "ALMACENADO",
+      "fuente": "ejemplo.xlsx"
+    }
+  ]
+}

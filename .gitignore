@@ -1,0 +1,13 @@
+# Archivos de inventario reales: nunca se suben al repositorio
+*.xlsx
+*.xls
+*.csv
+
+# Sistema
+.DS_Store
+Thumbs.db
+node_modules/
+
+# Servidor de prueba local (no forma parte del despliegue estático)
+server.js
+
