@@ -88,6 +88,18 @@ MSD.exportPeriodSummaryCSV = function (summary) {
   MSD.exportCSV(rows, columns, 'maersk_resumen_periodo.csv');
 };
 
+MSD.exportFacturacionCSV = function (rows) {
+  const flat = rows.map((r) => ({
+    periodo: `Período Facturación del ${r.label}`,
+    inbound: Math.round(r.inboundCLP), outbound: Math.round(r.outboundCLP), almacenamiento: Math.round(r.almacenamientoCLP),
+  }));
+  const columns = [
+    { key: 'periodo', label: 'Período' }, { key: 'inbound', label: 'Inbound' },
+    { key: 'outbound', label: 'Outbound' }, { key: 'almacenamiento', label: 'Almacenamiento' },
+  ];
+  MSD.exportCSV(flat, columns, 'maersk_facturacion_periodo.csv');
+};
+
 MSD.exportQualityCSV = function (issues) {
   const columns = [
     { key: 'tipo', label: 'Tipo' }, { key: 'hu', label: 'HU' },

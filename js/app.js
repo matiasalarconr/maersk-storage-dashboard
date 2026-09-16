@@ -55,6 +55,7 @@ async function handleFile(fileKey, file) {
   document.getElementById(fileKey === 'f1' ? 'headerFile1' : 'headerFile2').textContent = file.name;
 
   MSD.recalculateAll();
+  if (MSD.state.files.f1.rows.length && MSD.state.files.f2.rows.length) activateTab('facturacion');
   const msg = document.getElementById('reloadMsg');
   msg.style.display = 'block';
   setTimeout(() => { msg.style.display = 'none'; }, 3500);
@@ -158,6 +159,8 @@ function syncConfigInputsFromState() {
   document.getElementById('cfgFechaUF2').value = MSD.toInputDate(MSD.parseISODateInput(c.fechaUF));
   document.getElementById('cfgTarifaUFm2mes').value = c.tarifaUFm2mes;
   document.getElementById('cfgM2PorHU').value = c.m2PorHU;
+  document.getElementById('cfgTarifaInbound').value = c.tarifaInboundUF;
+  document.getElementById('cfgTarifaOutbound').value = c.tarifaOutboundUF;
   document.getElementById('cfgMesComercial').value = c.mesComercialDias;
   document.getElementById('cfgDiaInicioCiclo').value = c.diaInicioCiclo;
   document.getElementById('cfgFechaCorte2').value = c.fechaCorte ? MSD.toInputDate(c.fechaCorte) : '';
@@ -200,6 +203,8 @@ function initConfigTab() {
     if (fUF) c.fechaUF = fUF;
     c.tarifaUFm2mes = Number(document.getElementById('cfgTarifaUFm2mes').value) || c.tarifaUFm2mes;
     c.m2PorHU = Number(document.getElementById('cfgM2PorHU').value) || c.m2PorHU;
+    c.tarifaInboundUF = Number(document.getElementById('cfgTarifaInbound').value) || c.tarifaInboundUF;
+    c.tarifaOutboundUF = Number(document.getElementById('cfgTarifaOutbound').value) || c.tarifaOutboundUF;
     c.mesComercialDias = Number(document.getElementById('cfgMesComercial').value) || c.mesComercialDias;
     c.diaInicioCiclo = Number(document.getElementById('cfgDiaInicioCiclo').value) || c.diaInicioCiclo;
     const fc = document.getElementById('cfgFechaCorte2').value;
@@ -261,7 +266,7 @@ MSD.renderDashboard = function () {
   document.getElementById('csDuplicadas').textContent = dupEntre.toLocaleString('es-CL');
   document.getElementById('csConflictos').textContent = conflictos.toLocaleString('es-CL');
 
-  ['dashboard', 'detalle', 'periodo', 'calidad'].forEach((t) => {
+  ['facturacion', 'dashboard', 'detalle', 'periodo', 'calidad'].forEach((t) => {
     document.getElementById(`${t}Empty`).style.display = hasData ? 'none' : 'block';
     document.getElementById(`${t}Content`).style.display = hasData ? 'block' : 'none';
   });
@@ -271,6 +276,8 @@ MSD.renderDashboard = function () {
   const config = MSD.state.config;
   const currentPeriod = MSD.getBillingPeriod(config.fechaCorte, config.diaInicioCiclo);
   const filtered = getFilteredHU();
+
+  MSD.renderFacturacionTable(MSD.calculateFacturacionPeriodo(MSD.state.consolidated, config));
 
   renderInfoBoxes(config, currentPeriod);
   renderSupuestos(config);
@@ -396,6 +403,7 @@ function initExportButtons() {
   document.getElementById('btnExportPDF').addEventListener('click', () => MSD.exportDashboardPDF());
   document.getElementById('btnExportPeriodCSV').addEventListener('click', () => MSD.exportPeriodSummaryCSV(MSD.state.periodSummary));
   document.getElementById('btnExportQualityCSV').addEventListener('click', () => MSD.exportQualityCSV(MSD.state.quality));
+  document.getElementById('btnExportFacturacionCSV').addEventListener('click', () => MSD.exportFacturacionCSV(MSD.calculateFacturacionPeriodo(MSD.state.consolidated, MSD.state.config)));
 }
 
 /* ---------------------------------------------------------------------------

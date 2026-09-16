@@ -188,6 +188,25 @@ MSD.renderPeriodSummaryTable = function (summary) {
   </table>`;
 };
 
+/* ---------------------------------------------------------------------------
+ * FACTURACIÓN POR PERÍODO (vista reducida: Inbound / Outbound / Almacenamiento)
+ * -------------------------------------------------------------------------*/
+
+MSD.renderFacturacionTable = function (rows) {
+  const el = document.getElementById('facturacionWrap');
+  if (!el) return;
+  if (!rows.length) { el.innerHTML = '<p class="hint">Sin datos suficientes para calcular la facturación por período.</p>'; return; }
+  el.innerHTML = rows.map((r) => `
+    <table class="invoice-table">
+      <thead><tr><th colspan="2">Período Facturación del ${r.label}</th></tr></thead>
+      <tbody>
+        <tr><td>Inbound</td><td>${MSD.formatCLPInvoice(r.inboundCLP)}</td></tr>
+        <tr><td>Outbound</td><td>${MSD.formatCLPInvoice(r.outboundCLP)}</td></tr>
+        <tr><td>Almacenamiento</td><td>${MSD.formatCLPInvoice(r.almacenamientoCLP)}</td></tr>
+      </tbody>
+    </table>`).join('');
+};
+
 MSD.renderAgingTable = function (aging) {
   const el = document.getElementById('agingTableWrap');
   if (!el) return;

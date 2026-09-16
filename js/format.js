@@ -85,6 +85,14 @@ MSD.formatCLP = function (n) {
   return '$ ' + rounded.toLocaleString('es-CL');
 };
 
+/** Formatea CLP estilo factura: $ 1.234.567, con "$ -" cuando el monto es 0. */
+MSD.formatCLPInvoice = function (n) {
+  if (n === null || n === undefined || Number.isNaN(n)) return '$ -';
+  const rounded = Math.round(n);
+  if (rounded === 0) return '$ -';
+  return '$ ' + rounded.toLocaleString('es-CL');
+};
+
 /** Formatea número como UF: 1.234,567 UF */
 MSD.formatUF = function (n, decimals = 3) {
   if (n === null || n === undefined || Number.isNaN(n)) return '—';

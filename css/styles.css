@@ -202,6 +202,16 @@ main { padding: 20px; max-width: 1600px; margin: 0 auto; }
 .quality-chips { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0; }
 .chip { background: #fdecea; color: var(--danger); border-radius: 12px; padding: 4px 10px; font-size: 12px; }
 
+/* ---------- Facturación (vista reducida) ---------- */
+.invoice-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; align-items: start; }
+.invoice-table { width: 100%; border-collapse: collapse; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; background: var(--panel); }
+.invoice-table thead th {
+  background: var(--accent); color: #fff; text-align: left; padding: 8px 12px; font-size: 13px; font-weight: 700;
+}
+.invoice-table tbody td { padding: 8px 12px; border-top: 1px solid var(--border); font-size: 13.5px; }
+.invoice-table tbody td:first-child { background: var(--navy); color: #fff; font-weight: 700; width: 55%; }
+.invoice-table tbody td:last-child { text-align: right; font-weight: 600; }
+
 /* ---------- Simulator ---------- */
 .sim-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .sim-form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 12px 0; }

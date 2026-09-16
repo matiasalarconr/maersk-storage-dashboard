@@ -24,6 +24,7 @@
 
 <nav class="tabs" id="tabsNav">
   <button class="tab-btn active" data-tab="actualizar">Actualizar Inventario</button>
+  <button class="tab-btn" data-tab="facturacion">Facturación</button>
   <button class="tab-btn" data-tab="dashboard">Dashboard</button>
   <button class="tab-btn" data-tab="detalle">Detalle</button>
   <button class="tab-btn" data-tab="periodo">Resumen por Período</button>
@@ -142,6 +143,18 @@
       <button class="btn btn-danger-ghost" id="btnLimpiar">Limpiar archivos</button>
     </div>
     <p id="reloadMsg" class="ok-msg" style="display:none;">Inventario actualizado correctamente</p>
+  </div>
+</section>
+
+<!-- ===================== TAB: FACTURACIÓN (vista reducida) ===================== -->
+<section class="tab-panel" id="tab-facturacion">
+  <div class="empty-state" id="facturacionEmpty">Carga ambas planillas para ver la facturación por período.</div>
+  <div id="facturacionContent" style="display:none;">
+    <div class="table-toolbar">
+      <span class="hint">Inbound = HU con DATE INBOUND en el período · Outbound = HU con DATE OUTBOUND (despacho) en el período · Almacenamiento = costo del período según fechas de corte.</span>
+      <button class="btn btn-ghost" id="btnExportFacturacionCSV">Exportar facturación CSV</button>
+    </div>
+    <div id="facturacionWrap" class="invoice-grid"></div>
   </div>
 </section>
 
@@ -285,6 +298,8 @@
       <label>Fecha UF <input type="date" id="cfgFechaUF2"></label>
       <label>Tarifa UF/m²/mes <input type="number" step="0.001" id="cfgTarifaUFm2mes"></label>
       <label>m² por HU <input type="number" step="0.01" id="cfgM2PorHU"></label>
+      <label>Tarifa Inbound (UF/Pallet) <input type="number" step="0.001" id="cfgTarifaInbound"></label>
+      <label>Tarifa Outbound (UF/Pallet) <input type="number" step="0.001" id="cfgTarifaOutbound"></label>
       <label>Mes comercial (días) <input type="number" id="cfgMesComercial"></label>
       <label>Día inicio ciclo <input type="number" id="cfgDiaInicioCiclo" min="1" max="28"></label>
       <label>Fecha de corte <input type="date" id="cfgFechaCorte2"></label>

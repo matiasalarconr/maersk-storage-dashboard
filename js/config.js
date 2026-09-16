@@ -10,6 +10,8 @@ MSD.DEFAULT_CONFIG = {
   fechaUF: '2026-08-24',
   tarifaUFm2mes: 0.26,
   m2PorHU: 1.8,
+  tarifaInboundUF: 0.076,   // Tabla N°1: Ingreso carga paletizada - Inbound (UF/Pallet)
+  tarifaOutboundUF: 0.076,  // Tabla N°1: Despacho carga Paletizada - Outbound (UF/pallet)
   mesComercialDias: 30,
   diaInicioCiclo: 28,
   metodologiaDias: 'A', // 'A' = mes comercial 30 días, 'B' = días reales del período
@@ -43,6 +45,8 @@ MSD.persistConfig = function (config) {
       fechaUF: config.fechaUF,
       tarifaUFm2mes: config.tarifaUFm2mes,
       m2PorHU: config.m2PorHU,
+      tarifaInboundUF: config.tarifaInboundUF,
+      tarifaOutboundUF: config.tarifaOutboundUF,
       mesComercialDias: config.mesComercialDias,
       diaInicioCiclo: config.diaInicioCiclo,
       metodologiaDias: config.metodologiaDias,

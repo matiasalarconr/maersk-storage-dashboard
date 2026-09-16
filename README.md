@@ -20,6 +20,10 @@ Responder rápidamente preguntas como:
 
 ## Características
 
+- Pestaña **Facturación** (vista reducida): tabla por período de facturación con
+  **Inbound**, **Outbound** y **Almacenamiento** en CLP, en el mismo formato usado
+  para conciliar contra la factura de MAERSK. Se abre automáticamente al cargar
+  ambas planillas.
 - Carga y reemplazo de **dos planillas Excel** (drag & drop o selector de archivo).
 - Detección automática de la hoja `INVENTARIO` y de la fila de encabezados (no asume
   una fila fija; tolera columnas con nombres levemente distintos entre planillas, p.ej.
@@ -149,6 +153,26 @@ Ambas se calculan con funciones separadas (`calculateAccumulatedDays` y
   el período.
 - **B) Días reales del período**: para el costo del período, la tarifa diaria se
   recalcula como `tarifa mensual / (días reales del período de facturación)`.
+
+### Facturación por período (vista reducida)
+
+Muestra, por cada período de facturación (día 28 → 27), tres montos en CLP:
+
+- **Inbound**: `(HU con DATE INBOUND dentro del período) × 0,076 UF/pallet × valor UF`
+  (tarifa "Ingreso carga paletizada - Inbound" de la Tabla N°1 de servicios Warehouse).
+- **Outbound**: `(HU con DATE OUTBOUND dentro del período) × 0,076 UF/pallet × valor UF`
+  (tarifa "Despacho carga Paletizada - Outbound").
+- **Almacenamiento**: el mismo costo del período calculado en el resto de la app
+  (días del período × tarifa diaria × valor UF).
+
+Ambas tarifas (Inbound/Outbound) son editables en **Configuración**. Como la hoja
+`INVENTARIO` no siempre trae un número de pallet confiable por fila, se asume
+**1 HU = 1 unidad facturable** para Inbound/Outbound; si tu operación cuenta pallets
+de forma distinta a las HU, ajusta la tarifa o pide agregar el conteo real de pallets.
+
+El primer período de la lista muestra como fecha de inicio la fecha real de la
+primera HU ingresada (no el día 28 teórico) cuando no había nada almacenado antes de
+esa fecha, igual que en una factura real.
 
 ### Proyección
 

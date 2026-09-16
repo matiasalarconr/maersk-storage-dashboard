@@ -279,6 +279,36 @@ MSD.calculatePeriodSummary = function (consolidated, config) {
 };
 
 /* ---------------------------------------------------------------------------
+ * FACTURACIÓN POR PERÍODO (vista reducida: Inbound / Outbound / Almacenamiento)
+ * Tarifas de Inbound y Outbound según Tabla N°1 de servicios Warehouse
+ * (0,076 UF/Pallet). Como la planilla INVENTARIO no trae un campo de pallets
+ * confiable, se cobra 1 HU = 1 unidad facturable de Inbound/Outbound.
+ * -------------------------------------------------------------------------*/
+
+MSD.calculateFacturacionPeriodo = function (consolidated, config) {
+  const summary = MSD.calculatePeriodSummary(consolidated, config);
+  if (!summary.length) return [];
+
+  let minInbound = null;
+  for (const hu of consolidated) if (hu.dateInbound) minInbound = MSD.minDate(minInbound, hu.dateInbound);
+
+  return summary.map((row, idx) => {
+    const inboundUF = row.ingresosHU * config.tarifaInboundUF;
+    const outboundUF = row.salidasHU * config.tarifaOutboundUF;
+    // El primer período muestra como inicio la fecha real de la primera HU ingresada
+    // (no el día 28 teórico) cuando no había nada almacenado antes de esa fecha.
+    const labelStart = (idx === 0 && row.huAlInicio === 0 && minInbound) ? minInbound : row.period.start;
+    return {
+      period: row.period,
+      label: `${MSD.formatDate(labelStart)} → ${MSD.formatDate(row.period.end)}`,
+      inboundUF, inboundCLP: inboundUF * config.valorUF,
+      outboundUF, outboundCLP: outboundUF * config.valorUF,
+      almacenamientoUF: row.costoUF, almacenamientoCLP: row.costoCLP,
+    };
+  });
+};
+
+/* ---------------------------------------------------------------------------
  * SERIE DIARIA (para gráficos "por día")
  * -------------------------------------------------------------------------*/
 
