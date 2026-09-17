@@ -55,6 +55,7 @@
       <label>Fecha de corte
         <input type="date" id="cfgFechaCorte">
       </label>
+      <button id="btnFechaCorteHoy" class="btn btn-ghost" title="Fijar fecha de corte a hoy" style="align-self:flex-end;">Hoy</button>
       <label>Fecha de proyección
         <input type="date" id="cfgFechaProyeccion">
       </label>
@@ -150,11 +151,28 @@
 <section class="tab-panel" id="tab-facturacion">
   <div class="empty-state" id="facturacionEmpty">Carga ambas planillas para ver la facturación por período.</div>
   <div id="facturacionContent" style="display:none;">
+
+    <div class="info-box">
+      <h3>SITUACIÓN ACTUAL <span class="hint" id="situacionFechaLabel"></span></h3>
+      <div class="kpi-grid" id="situacionActualGrid"></div>
+    </div>
+
+    <div class="info-box">
+      <h3>PROYECCIÓN A LA PRÓXIMA FACTURA (día 28)</h3>
+      <div class="kpi-grid" id="proximaFacturaGrid"></div>
+    </div>
+
     <div class="table-toolbar">
-      <span class="hint">Inbound = HU con DATE INBOUND en el período · Outbound = HU con DATE OUTBOUND (despacho) en el período · Almacenamiento = costo del período según fechas de corte.</span>
+      <span class="hint">Inbound = HU con DATE INBOUND en el período · Outbound = HU con DATE OUTBOUND (despacho) en el período · Almacenamiento = costo del período según fechas de corte. Cada día 28 se emite la factura y el ciclo reinicia como día 0.</span>
       <button class="btn btn-ghost" id="btnExportFacturacionCSV">Exportar facturación CSV</button>
     </div>
     <div id="facturacionWrap" class="invoice-grid"></div>
+
+    <div class="table-toolbar" style="margin-top:20px;">
+      <input type="text" id="facturacionSearch" placeholder="Buscar HU...">
+      <span class="hint">Tarifa = costo acumulado de esa HU hasta la fecha de corte.</span>
+    </div>
+    <div id="facturacionDetailWrap"></div>
   </div>
 </section>
 

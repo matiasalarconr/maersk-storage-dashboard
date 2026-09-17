@@ -279,6 +279,34 @@ MSD.calculatePeriodSummary = function (consolidated, config) {
 };
 
 /* ---------------------------------------------------------------------------
+ * SITUACIÓN ACTUAL Y PROYECCIÓN A LA PRÓXIMA FACTURA (día 28)
+ * Cada día 28 se emite la factura del período y el ciclo reinicia como día 0.
+ * -------------------------------------------------------------------------*/
+
+MSD.calculateSituacionActual = function (consolidated, config) {
+  const fechaCorte = config.fechaCorte;
+  const currentPeriod = MSD.getBillingPeriod(fechaCorte, config.diaInicioCiclo);
+  const kpis = MSD.calculateKPIs(consolidated, config, currentPeriod);
+  const diaCiclo = MSD.daysBetween(currentPeriod.start, fechaCorte); // día 0 = 28
+
+  const fechaProximaFactura = MSD.addDays(currentPeriod.end, 1); // próximo día 28
+  const diasRestantesPeriodo = MSD.daysBetween(fechaCorte, fechaProximaFactura);
+  const costoProyectadoPeriodoUF = kpis.costoPeriodoUF + kpis.huActivas * kpis.tarifaDiariaUF * diasRestantesPeriodo;
+  const costoProyectadoPeriodoCLP = costoProyectadoPeriodoUF * config.valorUF;
+
+  return {
+    fechaCorte, currentPeriod, diaCiclo,
+    huActivas: kpis.huActivas, huDespachadas: kpis.huDespachadas,
+    m2Ocupados: kpis.m2Ocupados,
+    costoAcumUF: kpis.costoAcumUF, costoAcumCLP: kpis.costoAcumCLP,
+    costoPeriodoUF: kpis.costoPeriodoUF, costoPeriodoCLP: kpis.costoPeriodoCLP,
+    costoDiarioActualCLP: kpis.costoDiarioActualCLP,
+    fechaProximaFactura, diasRestantesPeriodo,
+    costoProyectadoPeriodoUF, costoProyectadoPeriodoCLP,
+  };
+};
+
+/* ---------------------------------------------------------------------------
  * FACTURACIÓN POR PERÍODO (vista reducida: Inbound / Outbound / Almacenamiento)
  * Tarifas de Inbound y Outbound según Tabla N°1 de servicios Warehouse
  * (0,076 UF/Pallet). Como la planilla INVENTARIO no trae un campo de pallets

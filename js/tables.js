@@ -70,15 +70,16 @@ function cellText(row, key) {
   return v ?? '';
 }
 
-MSD.renderDetailTable = function (rows) {
-  const container = document.getElementById('detailTableWrap');
+/** Tabla genérica con búsqueda por HU, orden por columna y paginación. */
+MSD.renderGenericTable = function (containerId, rows, columns, state, onRendered) {
+  const container = document.getElementById(containerId);
   if (!container) return;
-  const search = MSD.tableState.search.trim().toUpperCase();
+  const search = state.search.trim().toUpperCase();
 
   let filtered = rows;
   if (search) filtered = rows.filter((r) => String(r.hu).toUpperCase().includes(search));
 
-  const { sortKey, sortDir } = MSD.tableState;
+  const { sortKey, sortDir } = state;
   filtered = filtered.slice().sort((a, b) => {
     let va = a[sortKey], vb = b[sortKey];
     if (va instanceof Date || vb instanceof Date) { va = va ? va.getTime() : -Infinity; vb = vb ? vb.getTime() : -Infinity; }
@@ -88,51 +89,90 @@ MSD.renderDetailTable = function (rows) {
   });
 
   const total = filtered.length;
-  const pageCount = Math.max(1, Math.ceil(total / MSD.tableState.pageSize));
-  MSD.tableState.page = Math.min(MSD.tableState.page, pageCount);
-  const start = (MSD.tableState.page - 1) * MSD.tableState.pageSize;
-  const pageRows = filtered.slice(start, start + MSD.tableState.pageSize);
+  const pageCount = Math.max(1, Math.ceil(total / state.pageSize));
+  state.page = Math.min(state.page, pageCount);
+  const start = (state.page - 1) * state.pageSize;
+  const pageRows = filtered.slice(start, start + state.pageSize);
 
-  const thead = MSD.DETAIL_COLUMNS.map((c) => {
+  const thead = columns.map((c) => {
     const active = c.key === sortKey;
     const arrow = active ? (sortDir === 'asc' ? ' ▲' : ' ▼') : '';
     return `<th data-key="${c.key}" class="sortable${active ? ' active' : ''}">${c.label}${arrow}</th>`;
   }).join('');
 
   const tbody = pageRows.map((r) => {
-    const tds = MSD.DETAIL_COLUMNS.map((c) => `<td>${cellText(r, c.key)}</td>`).join('');
+    const tds = columns.map((c) => `<td>${cellText(r, c.key)}</td>`).join('');
     return `<tr>${tds}</tr>`;
   }).join('');
 
   container.innerHTML = `
     <table class="data-table">
       <thead><tr>${thead}</tr></thead>
-      <tbody>${tbody || `<tr><td colspan="${MSD.DETAIL_COLUMNS.length}" class="empty-cell">Sin resultados</td></tr>`}</tbody>
+      <tbody>${tbody || `<tr><td colspan="${columns.length}" class="empty-cell">Sin resultados</td></tr>`}</tbody>
     </table>
     <div class="table-footer">
-      <span>${total.toLocaleString('es-CL')} HU · página ${MSD.tableState.page} de ${pageCount}</span>
+      <span>${total.toLocaleString('es-CL')} HU · página ${state.page} de ${pageCount}</span>
       <div class="pager">
-        <button data-page="prev" ${MSD.tableState.page <= 1 ? 'disabled' : ''}>‹ Anterior</button>
-        <button data-page="next" ${MSD.tableState.page >= pageCount ? 'disabled' : ''}>Siguiente ›</button>
+        <button data-page="prev" ${state.page <= 1 ? 'disabled' : ''}>‹ Anterior</button>
+        <button data-page="next" ${state.page >= pageCount ? 'disabled' : ''}>Siguiente ›</button>
       </div>
     </div>`;
 
   container.querySelectorAll('th.sortable').forEach((th) => {
     th.addEventListener('click', () => {
       const key = th.dataset.key;
-      if (MSD.tableState.sortKey === key) MSD.tableState.sortDir = MSD.tableState.sortDir === 'asc' ? 'desc' : 'asc';
-      else { MSD.tableState.sortKey = key; MSD.tableState.sortDir = 'desc'; }
-      MSD.renderDetailTable(rows);
+      if (state.sortKey === key) state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc';
+      else { state.sortKey = key; state.sortDir = 'desc'; }
+      MSD.renderGenericTable(containerId, rows, columns, state, onRendered);
     });
   });
   container.querySelectorAll('button[data-page]').forEach((btn) => {
     btn.addEventListener('click', () => {
-      MSD.tableState.page += btn.dataset.page === 'next' ? 1 : -1;
-      MSD.renderDetailTable(rows);
+      state.page += btn.dataset.page === 'next' ? 1 : -1;
+      MSD.renderGenericTable(containerId, rows, columns, state, onRendered);
     });
   });
 
-  MSD._lastDetailRows = filtered; // para exportar según filtro/búsqueda actual
+  if (onRendered) onRendered(filtered);
+};
+
+MSD.renderDetailTable = function (rows) {
+  MSD.renderGenericTable('detailTableWrap', rows, MSD.DETAIL_COLUMNS, MSD.tableState, (filtered) => {
+    MSD._lastDetailRows = filtered; // para exportar según filtro/búsqueda actual
+  });
+};
+
+/* ---------------------------------------------------------------------------
+ * FACTURACIÓN — tabla compacta por HU: tarifa, inbound y salida/picking
+ * -------------------------------------------------------------------------*/
+
+MSD.FACTURACION_DETAIL_COLUMNS = [
+  { key: 'hu', label: 'HU' },
+  { key: 'dateInbound', label: 'Fecha Inbound' },
+  { key: 'dateSalida', label: 'Fecha Salida / Picking' },
+  { key: 'estado', label: 'Estado' },
+  { key: 'costoAcumCLP', label: 'Tarifa (costo acumulado)' },
+];
+
+MSD.facturacionTableState = { sortKey: 'costoAcumCLP', sortDir: 'desc', search: '', page: 1, pageSize: 50 };
+
+MSD.buildFacturacionDetailRows = function (hus, config) {
+  return hus.map((hu) => {
+    const costo = MSD.calculateHUCost(hu, config, null);
+    return {
+      hu: hu.hu,
+      dateInbound: hu.dateInbound,
+      dateSalida: hu.dateOutbound || hu.datePicking || null,
+      estado: MSD.STATUS_LABELS[MSD.getHUStatus(hu)],
+      costoAcumCLP: costo.costoAcumCLP,
+    };
+  });
+};
+
+MSD.renderFacturacionDetailTable = function (rows) {
+  MSD.renderGenericTable('facturacionDetailWrap', rows, MSD.FACTURACION_DETAIL_COLUMNS, MSD.facturacionTableState, (filtered) => {
+    MSD._lastFacturacionDetailRows = filtered;
+  });
 };
 
 /* ---------------------------------------------------------------------------

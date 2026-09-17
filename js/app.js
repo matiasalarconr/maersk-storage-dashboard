@@ -192,6 +192,11 @@ function initParamsBar() {
     MSD.persistConfig(MSD.state.config);
     MSD.recalculateAll();
   });
+  document.getElementById('btnFechaCorteHoy').addEventListener('click', () => {
+    MSD.state.config.fechaCorte = MSD.todayUTC();
+    MSD.persistConfig(MSD.state.config);
+    MSD.recalculateAll();
+  });
 }
 
 function initConfigTab() {
@@ -277,7 +282,9 @@ MSD.renderDashboard = function () {
   const currentPeriod = MSD.getBillingPeriod(config.fechaCorte, config.diaInicioCiclo);
   const filtered = getFilteredHU();
 
+  renderSituacionActual(config);
   MSD.renderFacturacionTable(MSD.calculateFacturacionPeriodo(MSD.state.consolidated, config));
+  MSD.renderFacturacionDetailTable(MSD.buildFacturacionDetailRows(MSD.state.consolidated, config));
 
   renderInfoBoxes(config, currentPeriod);
   renderSupuestos(config);
@@ -316,6 +323,24 @@ MSD.renderDashboard = function () {
 
   renderTestCases(config);
 };
+
+function renderSituacionActual(config) {
+  const s = MSD.calculateSituacionActual(MSD.state.consolidated, config);
+  document.getElementById('situacionFechaLabel').textContent = `— al ${MSD.formatDate(s.fechaCorte)} (día ${s.diaCiclo} del ciclo, inicia el ${config.diaInicioCiclo})`;
+  document.getElementById('situacionActualGrid').innerHTML = [
+    kpiCard('HU activas', s.huActivas.toLocaleString('es-CL'), 'accent'),
+    kpiCard('m² ocupados', MSD.formatNumber(s.m2Ocupados, 1)),
+    kpiCard('Costo del período a hoy (CLP)', MSD.formatCLP(s.costoPeriodoCLP), 'success'),
+    kpiCard('Costo acumulado histórico (CLP)', MSD.formatCLP(s.costoAcumCLP)),
+    kpiCard('Costo diario actual (CLP)', MSD.formatCLP(s.costoDiarioActualCLP)),
+  ].join('');
+  document.getElementById('proximaFacturaGrid').innerHTML = [
+    kpiCard('Próxima factura (día 28)', MSD.formatDate(s.fechaProximaFactura)),
+    kpiCard('Días restantes del ciclo', s.diasRestantesPeriodo.toLocaleString('es-CL')),
+    kpiCard('Proyección costo período (UF)', MSD.formatUF(s.costoProyectadoPeriodoUF)),
+    kpiCard('Proyección costo período (CLP)', MSD.formatCLP(s.costoProyectadoPeriodoCLP), 'success'),
+  ].join('');
+}
 
 function renderInfoBoxes(config, currentPeriod) {
   const f1 = MSD.state.files.f1, f2 = MSD.state.files.f2;
@@ -397,6 +422,10 @@ function initExportButtons() {
     const config = MSD.state.config;
     const currentPeriod = MSD.getBillingPeriod(config.fechaCorte, config.diaInicioCiclo);
     MSD.renderDetailTable(MSD.buildDetailRows(getFilteredHU(), config, currentPeriod));
+  });
+  document.getElementById('facturacionSearch').addEventListener('input', (e) => {
+    MSD.facturacionTableState.search = e.target.value; MSD.facturacionTableState.page = 1;
+    MSD.renderFacturacionDetailTable(MSD.buildFacturacionDetailRows(MSD.state.consolidated, MSD.state.config));
   });
   document.getElementById('btnExportDetailCSV').addEventListener('click', () => MSD.exportDetailCSV(MSD._lastDetailRows || []));
   document.getElementById('btnExportDetailJSON').addEventListener('click', () => MSD.exportDetailJSON());
