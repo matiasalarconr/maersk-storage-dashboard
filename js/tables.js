@@ -6,54 +6,53 @@
 var MSD = window.MSD || (window.MSD = {});
 
 MSD.tableState = {
-  sortKey: 'costoAcumCLP', sortDir: 'desc', search: '', page: 1, pageSize: 50,
+  sortKey: 'costoAlmacenamientoCLP', sortDir: 'desc', search: '', page: 1, pageSize: 50,
 };
 
+/** Columnas de auditoría del cálculo de almacenamiento (sección 7 de la metodología). */
 MSD.DETAIL_COLUMNS = [
   { key: 'hu', label: 'HU' },
-  { key: 'estado', label: 'Estado' },
+  { key: 'producto', label: 'SKU / Código' },
   { key: 'location', label: 'Location' },
-  { key: 'producto', label: 'Producto' },
-  { key: 'descripcion', label: 'Descripción' },
-  { key: 'lote', label: 'Lote' },
+  { key: 'estado', label: 'Estado' },
+  { key: 'dateInbound', label: 'Fecha Inbound' },
+  { key: 'datePicking', label: 'Fecha Picking' },
+  { key: 'dateDespacho', label: 'Fecha Despacho' },
+  { key: 'fechaInicioCobro', label: 'Fecha Inicio Cobro' },
+  { key: 'fechaOutboundUtilizada', label: 'Fecha Outbound utilizada' },
+  { key: 'diasAlmacenamiento', label: 'Días Almacenamiento' },
+  { key: 'm2', label: 'm² por HU' },
+  { key: 'tarifaDiariaM2CLP', label: 'Tarifa diaria por m²' },
+  { key: 'costoAlmacenamientoCLP', label: 'Costo almacenamiento HU' },
   { key: 'cantidadTotal', label: 'Cantidad' },
-  { key: 'dateInbound', label: 'Inbound' },
-  { key: 'datePicking', label: 'Picking' },
-  { key: 'dateOutbound', label: 'Outbound' },
-  { key: 'finCalculo', label: 'Fin cálculo' },
-  { key: 'diasAcumulados', label: 'Días acum.' },
-  { key: 'diasPeriodo', label: 'Días período' },
-  { key: 'm2', label: 'm²' },
-  { key: 'costoPeriodoUF', label: 'Costo UF período' },
-  { key: 'costoPeriodoCLP', label: 'Costo CLP período' },
-  { key: 'costoAcumUF', label: 'Costo UF acum.' },
-  { key: 'costoAcumCLP', label: 'Costo CLP acum.' },
   { key: 'fuentes', label: 'Fuente' },
 ];
 
-/** Aplana las HU consolidadas + su costo calculado en filas planas para la tabla/exportación. */
-MSD.buildDetailRows = function (hus, config, period) {
+/**
+ * Aplana las HU consolidadas en filas de auditoría usando la ÚNICA fuente de
+ * verdad del cálculo de almacenamiento (MSD.calcularAlmacenamientoHU). Se usa
+ * tanto en la pestaña Detalle (todas las columnas) como en la tabla compacta
+ * de Facturación (subconjunto de columnas).
+ */
+MSD.buildDetailRows = function (hus, config) {
+  const fechaInicioCobro = config.fechaInicialCobro;
   return hus.map((hu) => {
-    const costo = MSD.calculateHUCost(hu, config, period);
+    const calc = MSD.calcularAlmacenamientoHU(hu, fechaInicioCobro, config.fechaCorte, config);
     return {
       hu: hu.hu,
-      estado: MSD.STATUS_LABELS[MSD.getHUStatus(hu)],
-      location: hu.location,
       producto: hu.producto,
-      descripcion: hu.descripcion,
-      lote: hu.lote,
-      cantidadTotal: hu.cantidadTotal,
+      location: hu.location,
+      estado: MSD.STATUS_LABELS[MSD.getHUStatus(hu)],
       dateInbound: hu.dateInbound,
       datePicking: hu.datePicking,
-      dateOutbound: hu.dateOutbound,
-      finCalculo: MSD.huFechaFinCalculo(hu, config.fechaCorte),
-      diasAcumulados: costo.diasAcumulados,
-      diasPeriodo: costo.diasPeriodo,
-      m2: costo.m2,
-      costoPeriodoUF: costo.costoPeriodoUF,
-      costoPeriodoCLP: costo.costoPeriodoCLP,
-      costoAcumUF: costo.costoAcumUF,
-      costoAcumCLP: costo.costoAcumCLP,
+      dateDespacho: hu.dateOutbound,
+      fechaInicioCobro,
+      fechaOutboundUtilizada: calc.fechaOutboundUtilizada,
+      diasAlmacenamiento: calc.diasAlmacenamiento,
+      m2: calc.m2,
+      tarifaDiariaM2CLP: calc.tarifaDiariaM2CLP,
+      costoAlmacenamientoCLP: calc.costoCLP,
+      cantidadTotal: hu.cantidadTotal,
       fuentes: hu.fuentes.join(', '),
     };
   });
@@ -143,31 +142,20 @@ MSD.renderDetailTable = function (rows) {
 };
 
 /* ---------------------------------------------------------------------------
- * FACTURACIÓN — tabla compacta por HU: tarifa, inbound y salida/picking
+ * FACTURACIÓN — tabla compacta por HU: mismo cálculo que Detalle (MSD.buildDetailRows),
+ * mostrando solo el subconjunto de columnas clave para auditar rápido.
  * -------------------------------------------------------------------------*/
 
 MSD.FACTURACION_DETAIL_COLUMNS = [
   { key: 'hu', label: 'HU' },
   { key: 'dateInbound', label: 'Fecha Inbound' },
-  { key: 'dateSalida', label: 'Fecha Salida / Picking' },
+  { key: 'fechaOutboundUtilizada', label: 'Fecha Salida / Picking' },
   { key: 'estado', label: 'Estado' },
-  { key: 'costoAcumCLP', label: 'Tarifa (costo acumulado)' },
+  { key: 'diasAlmacenamiento', label: 'Días' },
+  { key: 'costoAlmacenamientoCLP', label: 'Tarifa (costo)' },
 ];
 
-MSD.facturacionTableState = { sortKey: 'costoAcumCLP', sortDir: 'desc', search: '', page: 1, pageSize: 50 };
-
-MSD.buildFacturacionDetailRows = function (hus, config) {
-  return hus.map((hu) => {
-    const costo = MSD.calculateHUCost(hu, config, null);
-    return {
-      hu: hu.hu,
-      dateInbound: hu.dateInbound,
-      dateSalida: hu.dateOutbound || hu.datePicking || null,
-      estado: MSD.STATUS_LABELS[MSD.getHUStatus(hu)],
-      costoAcumCLP: costo.costoAcumCLP,
-    };
-  });
-};
+MSD.facturacionTableState = { sortKey: 'costoAlmacenamientoCLP', sortDir: 'desc', search: '', page: 1, pageSize: 50 };
 
 MSD.renderFacturacionDetailTable = function (rows) {
   MSD.renderGenericTable('facturacionDetailWrap', rows, MSD.FACTURACION_DETAIL_COLUMNS, MSD.facturacionTableState, (filtered) => {
@@ -210,20 +198,21 @@ MSD.renderPeriodSummaryTable = function (summary) {
   const el = document.getElementById('periodSummaryWrap');
   if (!el) return;
   if (!summary.length) { el.innerHTML = '<p class="hint">Sin datos suficientes para calcular períodos.</p>'; return; }
-  el.innerHTML = `<table class="data-table">
+  el.innerHTML = `<p class="hint">El costo de almacenamiento solo se calcula para el período vigente (el que usa FECHA_INICIAL_COBRO). Los períodos ya cerrados muestran solo ingresos/salidas de HU.</p>
+  <table class="data-table">
     <thead><tr><th>Período</th><th>HU promedio</th><th>HU al inicio</th><th>HU al cierre</th><th>m² promedio</th>
       <th>Ingresos HU</th><th>Salidas HU</th><th>Días-HU</th><th>Costo UF</th><th>Costo CLP</th></tr></thead>
-    <tbody>${summary.map((p) => `<tr>
-        <td>${p.period.label}</td>
+    <tbody>${summary.map((p) => `<tr${p.esPeriodoActual ? ' style="font-weight:600;"' : ''}>
+        <td>${p.period.label}${p.esPeriodoActual ? ' (vigente)' : ''}</td>
         <td>${MSD.formatNumber(p.huPromedio, 1)}</td>
         <td>${p.huAlInicio}</td>
         <td>${p.huAlCierre}</td>
         <td>${MSD.formatNumber(p.m2Promedio, 1)}</td>
         <td>${p.ingresosHU}</td>
         <td>${p.salidasHU}</td>
-        <td>${MSD.formatNumber(p.diasHU, 0)}</td>
-        <td>${MSD.formatUF(p.costoUF)}</td>
-        <td>${MSD.formatCLP(p.costoCLP)}</td>
+        <td>${p.diasHU === null ? '—' : MSD.formatNumber(p.diasHU, 0)}</td>
+        <td>${p.costoUF === null ? '—' : MSD.formatUF(p.costoUF)}</td>
+        <td>${p.costoCLP === null ? '—' : MSD.formatCLP(p.costoCLP)}</td>
       </tr>`).join('')}</tbody>
   </table>`;
 };
@@ -251,7 +240,7 @@ MSD.renderAgingTable = function (aging) {
   const el = document.getElementById('agingTableWrap');
   if (!el) return;
   el.innerHTML = `<table class="data-table">
-    <thead><tr><th>Rango</th><th>HU</th><th>m²</th><th>Costo acumulado UF</th><th>Costo acumulado CLP</th></tr></thead>
-    <tbody>${aging.map((b) => `<tr><td>${b.label}</td><td>${b.count}</td><td>${MSD.formatNumber(b.m2, 1)}</td><td>${MSD.formatUF(b.costoAcumUF)}</td><td>${MSD.formatCLP(b.costoAcumCLP)}</td></tr>`).join('')}</tbody>
+    <thead><tr><th>Rango</th><th>HU</th><th>m²</th><th>Costo almacenamiento UF</th><th>Costo almacenamiento CLP</th></tr></thead>
+    <tbody>${aging.map((b) => `<tr><td>${b.label}</td><td>${b.count}</td><td>${MSD.formatNumber(b.m2, 1)}</td><td>${MSD.formatUF(b.costoUF)}</td><td>${MSD.formatCLP(b.costoCLP)}</td></tr>`).join('')}</tbody>
   </table>`;
 };

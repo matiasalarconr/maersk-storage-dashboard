@@ -1,16 +1,28 @@
 /* ============================================================================
- * calculations.js — Ciclo de facturación (28→27), días acumulados/período,
- * tarifas, costo por HU, KPIs, proyección, antigüedad y resumen por período.
- * Toda la lógica de fechas está centralizada aquí para poder revisarla fácil.
+ * calculations.js — ÚNICA FUENTE DE VERDAD para el cálculo de almacenamiento.
+ *
+ * Metodología (corregida):
+ *   - Existe una única FECHA_INICIAL_COBRO configurable (no se usa DATE INBOUND
+ *     como inicio del cobro).
+ *   - Fecha de salida de una HU = la más temprana entre DATE PICKING y
+ *     DATE OUTBOUND/despacho (la que exista). Si no existe ninguna, la HU sigue
+ *     almacenada y se usa la fecha de corte ("hoy") como fin de cálculo.
+ *   - Días almacenados = (fecha_final - FECHA_INICIAL_COBRO) + 1 (el propio día
+ *     de inicio ya cuenta como día 1). Si fecha_final < FECHA_INICIAL_COBRO → 0.
+ *   - Costo HU = 1,8 m² × días almacenados × tarifa diaria por m².
+ *
+ * Todo el resto de la app (KPIs, tabla de detalle, facturación, antigüedad,
+ * proyección, gráficos "por día") consume MSD.calcularAlmacenamientoHU() para
+ * que exista una sola definición de costo de almacenamiento en todo el sistema.
  * ==========================================================================*/
 
 var MSD = window.MSD || (window.MSD = {});
 
 /* ---------------------------------------------------------------------------
- * CICLO DE FACTURACIÓN (día 28 = día 0 del nuevo período)
+ * CICLO 28→27 — se usa solo para AGRUPAR/ETIQUETAR períodos históricos
+ * (ingresos, salidas, próximo cierre). NO determina el inicio del cobro.
  * -------------------------------------------------------------------------*/
 
-/** Inicio del período de facturación al que pertenece `date`. */
 MSD.periodStartFor = function (date, dayStart = 28) {
   let y = date.getUTCFullYear();
   let m = date.getUTCMonth();
@@ -18,7 +30,6 @@ MSD.periodStartFor = function (date, dayStart = 28) {
   return new Date(Date.UTC(y, m, dayStart));
 };
 
-/** Fin del período (día dayStart-1 del mes siguiente al inicio), dado el inicio. */
 MSD.periodEndFor = function (periodStart, dayStart = 28) {
   return new Date(Date.UTC(periodStart.getUTCFullYear(), periodStart.getUTCMonth() + 1, dayStart - 1));
 };
@@ -33,14 +44,12 @@ MSD.periodShortLabel = function (end) {
   return `${MESES_ES[end.getUTCMonth()]}-${end.getUTCFullYear()}`;
 };
 
-/** Devuelve {start, end, label} del período de facturación que contiene `date`. */
 MSD.getBillingPeriod = function (date, dayStart = 28) {
   const start = MSD.periodStartFor(date, dayStart);
   const end = MSD.periodEndFor(start, dayStart);
   return { start, end, label: MSD.periodLabel(start, end), shortLabel: MSD.periodShortLabel(end) };
 };
 
-/** Lista todos los períodos de facturación que cubren el rango [minDate, maxDate]. */
 MSD.listPeriods = function (minDate, maxDate, dayStart = 28) {
   if (!minDate || !maxDate) return [];
   const periods = [];
@@ -56,77 +65,55 @@ MSD.listPeriods = function (minDate, maxDate, dayStart = 28) {
 };
 
 /* ---------------------------------------------------------------------------
- * DÍAS: acumulados (desde inbound) vs. de período (solo dentro del ciclo)
+ * ★ FUENTE ÚNICA DE VERDAD: fecha de salida y costo de almacenamiento por HU
  * -------------------------------------------------------------------------*/
 
-/** Fecha de fin "real" de una HU: outbound > picking > fechaCorte (sección 9). */
-MSD.huFechaFinReal = function (hu, fechaCorte) {
-  return hu.dateOutbound || hu.datePicking || fechaCorte;
+/**
+ * Determina la fecha en que una HU dejó de generar almacenamiento:
+ *   1. Si tiene DATE PICKING válida → candidata.
+ *   2. Si tiene DATE OUTBOUND/despacho válida → candidata.
+ *   3. Si existen ambas, se usa la más temprana (la primera señal real de que
+ *      el producto dejó de estar almacenado).
+ *   4. Si no existe ninguna, retorna null (la HU sigue almacenada).
+ */
+MSD.determinarFechaOutboundHU = function (hu) {
+  const candidatas = [hu.datePicking, hu.dateOutbound].filter(Boolean);
+  if (!candidatas.length) return null;
+  return candidatas.reduce((min, d) => (d < min ? d : min));
 };
 
-/** Fecha de fin efectiva para el cálculo histórico: min(fin real, fecha de corte). */
-MSD.huFechaFinCalculo = function (hu, fechaCorte) {
-  const finReal = MSD.huFechaFinReal(hu, fechaCorte);
-  return MSD.minDate(finReal, fechaCorte);
-};
+/**
+ * Calcula el almacenamiento de una HU entre `fechaInicio` (FECHA_INICIAL_COBRO,
+ * día 1) y su fecha de salida real, o `fechaFinSiActivo` (típicamente la fecha
+ * de corte / hoy) si todavía sigue almacenada.
+ *
+ *   dias = 0                                         si fechaFinal < fechaInicio
+ *   dias = (fechaFinal - fechaInicio) + 1             en caso contrario
+ *   costo = 1,8 m² × dias × tarifaDiariaM2
+ */
+MSD.calcularAlmacenamientoHU = function (hu, fechaInicio, fechaFinSiActivo, config) {
+  const fechaSalidaReal = MSD.determinarFechaOutboundHU(hu);
+  const estaAlmacenado = !fechaSalidaReal;
+  // Nunca se sigue cobrando más allá de la salida real; y nunca más allá del
+  // límite del período/corte que se esté evaluando.
+  const fechaOutboundUtilizada = fechaSalidaReal
+    ? MSD.minDate(fechaSalidaReal, fechaFinSiActivo)
+    : fechaFinSiActivo;
 
-/** Días acumulados desde DATE INBOUND hasta fin de cálculo (recortado a fechaCorte). */
-MSD.calculateAccumulatedDays = function (hu, fechaCorte) {
-  if (!hu.dateInbound) return 0;
-  if (hu.dateInbound > fechaCorte) return 0;
-  const fin = MSD.huFechaFinCalculo(hu, fechaCorte);
-  return MSD.daysBetween(hu.dateInbound, fin);
-};
-
-/** Días que corresponden únicamente al período de facturación indicado. */
-MSD.calculatePeriodDays = function (hu, period, fechaCorte) {
-  if (!hu.dateInbound) return 0;
-  if (hu.dateInbound > fechaCorte) return 0;
-  const finCalculo = MSD.huFechaFinCalculo(hu, fechaCorte);
-  const effStart = MSD.maxDate(hu.dateInbound, period.start);
-  const effEnd = MSD.minDate(finCalculo, period.end);
-  if (effEnd <= effStart) return 0;
-  return MSD.daysBetween(effStart, effEnd);
-};
-
-/* ---------------------------------------------------------------------------
- * TARIFAS Y COSTOS
- * -------------------------------------------------------------------------*/
-
-/** Tarifa diaria en UF/HU dado un divisor de días (mes comercial o días reales del período). */
-MSD.calculateDailyRate = function (config, divisorDias) {
-  return MSD.tarifaMensualUFporHU(config) / divisorDias;
-};
-
-/** Costo completo (UF y CLP, acumulado y de período) de una HU. */
-MSD.calculateHUCost = function (hu, config, period) {
-  const fechaCorte = config.fechaCorte;
-  const tarifaDiariaAcumUF = MSD.calculateDailyRate(config, config.mesComercialDias);
-
-  const diasAcumulados = MSD.calculateAccumulatedDays(hu, fechaCorte);
-  const costoAcumUF = diasAcumulados * tarifaDiariaAcumUF;
-
-  let diasPeriodo = 0, costoPeriodoUF = 0, tarifaDiariaPeriodoUF = tarifaDiariaAcumUF;
-  if (period) {
-    diasPeriodo = MSD.calculatePeriodDays(hu, period, fechaCorte);
-    let divisor = config.mesComercialDias;
-    if (config.metodologiaDias === 'B') {
-      divisor = MSD.daysBetween(period.start, MSD.addDays(period.end, 1)); // días reales del ciclo
-    }
-    tarifaDiariaPeriodoUF = MSD.calculateDailyRate(config, divisor);
-    costoPeriodoUF = diasPeriodo * tarifaDiariaPeriodoUF;
+  let dias = 0;
+  if (fechaInicio && fechaOutboundUtilizada && fechaOutboundUtilizada >= fechaInicio) {
+    dias = MSD.daysBetween(fechaInicio, fechaOutboundUtilizada) + 1; // fechaInicio = Día 1
   }
 
+  const tarifaDiariaM2UF = config.tarifaUFm2mes / config.mesComercialDias;
+  const tarifaDiariaM2CLP = tarifaDiariaM2UF * config.valorUF;
+  const costoUF = config.m2PorHU * dias * tarifaDiariaM2UF;
+  const costoCLP = costoUF * config.valorUF;
+
   return {
-    m2: config.m2PorHU,
-    tarifaMensualUF: MSD.tarifaMensualUFporHU(config),
-    tarifaDiariaUF: tarifaDiariaAcumUF,
-    diasAcumulados,
-    diasPeriodo,
-    costoAcumUF,
-    costoAcumCLP: costoAcumUF * config.valorUF,
-    costoPeriodoUF,
-    costoPeriodoCLP: costoPeriodoUF * config.valorUF,
+    fechaOutboundUtilizada, diasAlmacenamiento: dias,
+    m2: config.m2PorHU, tarifaDiariaM2UF, tarifaDiariaM2CLP,
+    costoUF, costoCLP, estaAlmacenado,
   };
 };
 
@@ -134,86 +121,76 @@ MSD.calculateHUCost = function (hu, config, period) {
  * KPIs
  * -------------------------------------------------------------------------*/
 
-/** HU "activa al corte": ya ingresó y (no tiene salida o su salida es posterior al corte). */
-MSD.isActiveAtCutoff = function (hu, fechaCorte) {
-  if (!hu.dateInbound || hu.dateInbound > fechaCorte) return false;
-  return !hu.dateOutbound || hu.dateOutbound > fechaCorte;
-};
-
 MSD.calculateKPIs = function (consolidated, config, currentPeriod) {
+  const fechaInicio = config.fechaInicialCobro;
   const fechaCorte = config.fechaCorte;
-  let huActivas = 0, huDespachadas = 0, huEnPicking = 0, huAlmacenado = 0;
-  let costoAcumUF = 0, costoAcumCLP = 0, costoPeriodoUF = 0, costoPeriodoCLP = 0;
+  let huAlmacenadas = 0, huRetiradas = 0, huDespachadas = 0, huEnPicking = 0;
+  let costoTotalUF = 0, costoTotalCLP = 0, costoAlmacenadasCLP = 0, costoRetiradasCLP = 0;
   let ingresosHUPeriod = 0, salidasHUPeriod = 0;
-  let m2Ocupados = 0, costoDiarioActualCLP = 0;
-  const tarifaDiariaUF = MSD.calculateDailyRate(config, config.mesComercialDias);
 
   for (const hu of consolidated) {
+    const calc = MSD.calcularAlmacenamientoHU(hu, fechaInicio, fechaCorte, config);
+    costoTotalUF += calc.costoUF;
+    costoTotalCLP += calc.costoCLP;
+    if (calc.estaAlmacenado) { huAlmacenadas++; costoAlmacenadasCLP += calc.costoCLP; }
+    else { huRetiradas++; costoRetiradasCLP += calc.costoCLP; }
+
     const estado = MSD.getHUStatus(hu);
     if (estado === 'DESPACHADO') huDespachadas++;
     else if (estado === 'EN_PICKING') huEnPicking++;
-    else huAlmacenado++;
-    if (estado !== 'DESPACHADO') huActivas++;
-
-    const costo = MSD.calculateHUCost(hu, config, currentPeriod);
-    costoAcumUF += costo.costoAcumUF;
-    costoAcumCLP += costo.costoAcumCLP;
-    costoPeriodoUF += costo.costoPeriodoUF;
-    costoPeriodoCLP += costo.costoPeriodoCLP;
 
     if (currentPeriod && hu.dateInbound && hu.dateInbound >= currentPeriod.start && hu.dateInbound <= currentPeriod.end) ingresosHUPeriod++;
     if (currentPeriod && hu.dateOutbound && hu.dateOutbound >= currentPeriod.start && hu.dateOutbound <= currentPeriod.end) salidasHUPeriod++;
   }
 
-  // m² ocupados y costo diario se derivan del conteo de HU activas (ALMACENADO + EN_PICKING):
-  // una HU ocupa espacio físico aunque le falte DATE INBOUND (esa falta ya se reporta en
-  // Calidad de Datos y hace que su costo en UF/CLP individual sea 0, sin duplicar el m²).
-  m2Ocupados = huActivas * config.m2PorHU;
-  costoDiarioActualCLP = huActivas * tarifaDiariaUF * config.valorUF;
+  const tarifaDiariaM2CLP = (config.tarifaUFm2mes / config.mesComercialDias) * config.valorUF;
+  const tarifaDiariaHUCLP = tarifaDiariaM2CLP * config.m2PorHU;
+  const m2Ocupados = huAlmacenadas * config.m2PorHU; // sección 12: HU actualmente almacenados × 1,8
 
   return {
     huUnicasTotales: consolidated.length,
-    huActivas, huDespachadas, huEnPicking, huAlmacenado,
+    huAlmacenadas, huRetiradas, huDespachadas, huEnPicking,
     m2Ocupados,
-    costoAcumUF, costoAcumCLP, costoPeriodoUF, costoPeriodoCLP,
-    costoDiarioActualCLP,
+    costoTotalUF, costoTotalCLP, costoAlmacenadasCLP, costoRetiradasCLP,
+    costoDiarioActualCLP: huAlmacenadas * tarifaDiariaHUCLP,
+    tarifaDiariaHUCLP, tarifaDiariaM2CLP,
     ingresosHUPeriod, salidasHUPeriod,
-    tarifaDiariaUF, tarifaDiariaCLP: tarifaDiariaUF * config.valorUF,
   };
 };
 
 /* ---------------------------------------------------------------------------
- * PROYECCIÓN
+ * PROYECCIÓN — extiende el costo de las HU aún almacenadas desde la fecha de
+ * corte hasta la fecha de proyección, con la misma tarifa diaria.
  * -------------------------------------------------------------------------*/
 
 MSD.calculateProjection = function (consolidated, config, fechaProyeccion) {
+  const fechaInicio = config.fechaInicialCobro;
   const fechaCorte = config.fechaCorte;
-  const tarifaDiariaUF = MSD.calculateDailyRate(config, config.mesComercialDias);
-  let huActivas = 0, costoRealAcumUF = 0, costoAdicionalUF = 0;
+  const tarifaDiariaM2CLP = (config.tarifaUFm2mes / config.mesComercialDias) * config.valorUF;
+  const tarifaDiariaHUCLP = tarifaDiariaM2CLP * config.m2PorHU;
+  const diasProyeccion = (fechaProyeccion && fechaProyeccion > fechaCorte) ? MSD.daysBetween(fechaCorte, fechaProyeccion) : 0;
 
-  const diasProyeccion = fechaProyeccion > fechaCorte ? MSD.daysBetween(fechaCorte, fechaProyeccion) : 0;
-
+  let huActivas = 0, costoRealAcumCLP = 0, costoAdicionalCLP = 0;
   for (const hu of consolidated) {
-    if (!MSD.isActiveAtCutoff(hu, fechaCorte)) continue;
+    const calc = MSD.calcularAlmacenamientoHU(hu, fechaInicio, fechaCorte, config);
+    if (!calc.estaAlmacenado) continue;
     huActivas++;
-    costoRealAcumUF += MSD.calculateAccumulatedDays(hu, fechaCorte) * tarifaDiariaUF;
-    costoAdicionalUF += diasProyeccion * tarifaDiariaUF;
+    costoRealAcumCLP += calc.costoCLP;
+    costoAdicionalCLP += diasProyeccion * tarifaDiariaHUCLP;
   }
+  const costoTotalCLP = costoRealAcumCLP + costoAdicionalCLP;
 
-  const costoTotalUF = costoRealAcumUF + costoAdicionalUF;
   return {
     fechaCorte, fechaProyeccion, diasProyeccion,
     huActivas,
     m2Ocupados: huActivas * config.m2PorHU,
-    tarifaDiariaUF, tarifaDiariaCLP: tarifaDiariaUF * config.valorUF,
-    costoRealAcumUF, costoRealAcumCLP: costoRealAcumUF * config.valorUF,
-    costoAdicionalUF, costoAdicionalCLP: costoAdicionalUF * config.valorUF,
-    costoTotalUF, costoTotalCLP: costoTotalUF * config.valorUF,
+    tarifaDiariaUF: tarifaDiariaHUCLP / config.valorUF, tarifaDiariaCLP: tarifaDiariaHUCLP,
+    costoRealAcumCLP, costoAdicionalCLP, costoTotalCLP,
   };
 };
 
 /* ---------------------------------------------------------------------------
- * ANTIGÜEDAD (aging) de inventario activo
+ * ANTIGÜEDAD (aging) de HU actualmente almacenadas
  * -------------------------------------------------------------------------*/
 
 MSD.AGING_BUCKETS = [
@@ -226,24 +203,29 @@ MSD.AGING_BUCKETS = [
 ];
 
 MSD.calculateAging = function (consolidated, config) {
-  const fechaCorte = config.fechaCorte;
-  const buckets = MSD.AGING_BUCKETS.map((b) => ({ ...b, count: 0, m2: 0, costoAcumUF: 0, costoAcumCLP: 0 }));
+  const buckets = MSD.AGING_BUCKETS.map((b) => ({ ...b, count: 0, m2: 0, costoUF: 0, costoCLP: 0 }));
   for (const hu of consolidated) {
-    if (!MSD.isActiveAtCutoff(hu, fechaCorte)) continue;
-    const dias = MSD.calculateAccumulatedDays(hu, fechaCorte);
-    const bucket = buckets.find((b) => dias >= b.min && dias <= b.max);
+    const calc = MSD.calcularAlmacenamientoHU(hu, config.fechaInicialCobro, config.fechaCorte, config);
+    if (!calc.estaAlmacenado) continue;
+    const bucket = buckets.find((b) => calc.diasAlmacenamiento >= b.min && calc.diasAlmacenamiento <= b.max);
     if (!bucket) continue;
-    const costo = MSD.calculateHUCost(hu, config, null);
     bucket.count++;
     bucket.m2 += config.m2PorHU;
-    bucket.costoAcumUF += costo.costoAcumUF;
-    bucket.costoAcumCLP += costo.costoAcumCLP;
+    bucket.costoUF += calc.costoUF;
+    bucket.costoCLP += calc.costoCLP;
   }
   return buckets;
 };
 
 /* ---------------------------------------------------------------------------
- * RESUMEN POR PERÍODO
+ * RESUMEN POR PERÍODO (histórico, agrupado por ciclo 28→27)
+ *
+ * El costo de Almacenamiento SOLO puede calcularse con la metodología nueva
+ * para el período vigente (el que usa FECHA_INICIAL_COBRO): para períodos ya
+ * cerrados no existe una fecha de inicio de cobro válida en este sistema
+ * (backdatarla al inicio automático del ciclo 28→27 cobraría días en que las
+ * HU todavía no existían en bodega), así que esos períodos solo muestran
+ * ingresos/salidas de HU (eventos reales, no afectados por la metodología).
  * -------------------------------------------------------------------------*/
 
 MSD.calculatePeriodSummary = function (consolidated, config) {
@@ -255,80 +237,83 @@ MSD.calculatePeriodSummary = function (consolidated, config) {
   if (config.fechaProyeccion) maxRelevant = MSD.maxDate(maxRelevant, config.fechaProyeccion);
   if (!minInbound) return [];
 
+  const currentPeriod = MSD.getBillingPeriod(config.fechaCorte, config.diaInicioCiclo);
   const periods = MSD.listPeriods(minInbound, maxRelevant, config.diaInicioCiclo);
   return periods.map((period) => {
-    let huAlInicio = 0, huAlCierre = 0, ingresos = 0, salidas = 0, diasHU = 0, costoUF = 0;
+    const esPeriodoActual = period.start.getTime() === currentPeriod.start.getTime();
+    const fechaFinCap = MSD.minDate(config.fechaCorte, period.end);
+    let huAlInicio = 0, huAlCierre = 0, ingresos = 0, salidas = 0, diasHU = 0, costoUF = 0, costoCLP = 0;
     for (const hu of consolidated) {
       if (hu.dateInbound && hu.dateInbound < period.start && (!hu.dateOutbound || hu.dateOutbound >= period.start)) huAlInicio++;
       if (hu.dateInbound && hu.dateInbound <= period.end && (!hu.dateOutbound || hu.dateOutbound > period.end) && hu.dateInbound <= config.fechaCorte) huAlCierre++;
       if (hu.dateInbound && hu.dateInbound >= period.start && hu.dateInbound <= period.end) ingresos++;
       if (hu.dateOutbound && hu.dateOutbound >= period.start && hu.dateOutbound <= period.end) salidas++;
-      const costo = MSD.calculateHUCost(hu, config, period);
-      diasHU += costo.diasPeriodo;
-      costoUF += costo.costoPeriodoUF;
+      if (esPeriodoActual) {
+        const calc = MSD.calcularAlmacenamientoHU(hu, config.fechaInicialCobro, fechaFinCap, config);
+        diasHU += calc.diasAlmacenamiento;
+        costoUF += calc.costoUF;
+        costoCLP += calc.costoCLP;
+      }
     }
     const huPromedio = (huAlInicio + huAlCierre) / 2;
     return {
-      period,
+      period, esPeriodoActual,
+      fechaInicioEfectivo: esPeriodoActual ? config.fechaInicialCobro : null,
       huPromedio, huAlInicio, huAlCierre,
       m2Promedio: huPromedio * config.m2PorHU,
       ingresosHU: ingresos, salidasHU: salidas,
-      diasHU, costoUF, costoCLP: costoUF * config.valorUF,
+      diasHU: esPeriodoActual ? diasHU : null,
+      costoUF: esPeriodoActual ? costoUF : null,
+      costoCLP: esPeriodoActual ? costoCLP : null,
     };
   });
 };
 
 /* ---------------------------------------------------------------------------
  * SITUACIÓN ACTUAL Y PROYECCIÓN A LA PRÓXIMA FACTURA (día 28)
- * Cada día 28 se emite la factura del período y el ciclo reinicia como día 0.
  * -------------------------------------------------------------------------*/
 
 MSD.calculateSituacionActual = function (consolidated, config) {
+  const fechaInicio = config.fechaInicialCobro;
   const fechaCorte = config.fechaCorte;
   const currentPeriod = MSD.getBillingPeriod(fechaCorte, config.diaInicioCiclo);
   const kpis = MSD.calculateKPIs(consolidated, config, currentPeriod);
-  const diaCiclo = MSD.daysBetween(currentPeriod.start, fechaCorte); // día 0 = 28
+
+  const diasTranscurridos = (fechaInicio && fechaCorte && fechaCorte >= fechaInicio)
+    ? MSD.daysBetween(fechaInicio, fechaCorte) + 1 : 0;
 
   const fechaProximaFactura = MSD.addDays(currentPeriod.end, 1); // próximo día 28
   const diasRestantesPeriodo = MSD.daysBetween(fechaCorte, fechaProximaFactura);
-  const costoProyectadoPeriodoUF = kpis.costoPeriodoUF + kpis.huActivas * kpis.tarifaDiariaUF * diasRestantesPeriodo;
-  const costoProyectadoPeriodoCLP = costoProyectadoPeriodoUF * config.valorUF;
+  const costoProyectadoCLP = kpis.costoTotalCLP + kpis.huAlmacenadas * kpis.tarifaDiariaHUCLP * diasRestantesPeriodo;
 
   return {
-    fechaCorte, currentPeriod, diaCiclo,
-    huActivas: kpis.huActivas, huDespachadas: kpis.huDespachadas,
+    fechaCorte, fechaInicio, diasTranscurridos,
+    huAlmacenadas: kpis.huAlmacenadas, huRetiradas: kpis.huRetiradas, huDespachadas: kpis.huDespachadas,
     m2Ocupados: kpis.m2Ocupados,
-    costoAcumUF: kpis.costoAcumUF, costoAcumCLP: kpis.costoAcumCLP,
-    costoPeriodoUF: kpis.costoPeriodoUF, costoPeriodoCLP: kpis.costoPeriodoCLP,
+    costoTotalCLP: kpis.costoTotalCLP, costoAlmacenadasCLP: kpis.costoAlmacenadasCLP, costoRetiradasCLP: kpis.costoRetiradasCLP,
     costoDiarioActualCLP: kpis.costoDiarioActualCLP,
-    fechaProximaFactura, diasRestantesPeriodo,
-    costoProyectadoPeriodoUF, costoProyectadoPeriodoCLP,
+    fechaProximaFactura, diasRestantesPeriodo, costoProyectadoCLP,
   };
 };
 
 /* ---------------------------------------------------------------------------
  * FACTURACIÓN POR PERÍODO (vista reducida: Inbound / Outbound / Almacenamiento)
- * Tarifas de Inbound y Outbound según Tabla N°1 de servicios Warehouse
- * (0,076 UF/Pallet). Como la planilla INVENTARIO no trae un campo de pallets
- * confiable, se cobra 1 HU = 1 unidad facturable de Inbound/Outbound.
+ * Inbound/Outbound: tarifas de la Tabla N°1 de servicios Warehouse, aplicadas
+ * por evento (HU con DATE INBOUND / DATE OUTBOUND dentro del período).
+ * Almacenamiento: MSD.calcularAlmacenamientoHU() — misma fuente que el resto.
  * -------------------------------------------------------------------------*/
 
 MSD.calculateFacturacionPeriodo = function (consolidated, config) {
-  const summary = MSD.calculatePeriodSummary(consolidated, config);
+  // Solo el período vigente (el que usa FECHA_INICIAL_COBRO) tiene un costo de
+  // Almacenamiento calculable con esta metodología; ver nota en calculatePeriodSummary.
+  const summary = MSD.calculatePeriodSummary(consolidated, config).filter((row) => row.esPeriodoActual);
   if (!summary.length) return [];
-
-  let minInbound = null;
-  for (const hu of consolidated) if (hu.dateInbound) minInbound = MSD.minDate(minInbound, hu.dateInbound);
-
-  return summary.map((row, idx) => {
+  return summary.map((row) => {
     const inboundUF = row.ingresosHU * config.tarifaInboundUF;
     const outboundUF = row.salidasHU * config.tarifaOutboundUF;
-    // El primer período muestra como inicio la fecha real de la primera HU ingresada
-    // (no el día 28 teórico) cuando no había nada almacenado antes de esa fecha.
-    const labelStart = (idx === 0 && row.huAlInicio === 0 && minInbound) ? minInbound : row.period.start;
     return {
       period: row.period,
-      label: `${MSD.formatDate(labelStart)} → ${MSD.formatDate(row.period.end)}`,
+      label: `${MSD.formatDate(row.fechaInicioEfectivo)} → ${MSD.formatDate(row.period.end)}`,
       inboundUF, inboundCLP: inboundUF * config.valorUF,
       outboundUF, outboundCLP: outboundUF * config.valorUF,
       almacenamientoUF: row.costoUF, almacenamientoCLP: row.costoCLP,
@@ -337,39 +322,36 @@ MSD.calculateFacturacionPeriodo = function (consolidated, config) {
 };
 
 /* ---------------------------------------------------------------------------
- * SERIE DIARIA (para gráficos "por día")
+ * SERIE DIARIA (para gráficos "por día"), anclada en FECHA_INICIAL_COBRO
  * -------------------------------------------------------------------------*/
 
 MSD.MAX_CHART_DAYS = 400;
 
 MSD.calculateDailySeries = function (consolidated, config) {
-  let minInbound = null;
-  for (const hu of consolidated) if (hu.dateInbound) minInbound = MSD.minDate(minInbound, hu.dateInbound);
+  const fechaInicio = config.fechaInicialCobro;
   const fechaFin = config.fechaCorte;
-  if (!minInbound || !fechaFin) return { labels: [], huActivas: [], m2: [], costoAcumCLP: [] };
+  if (!fechaInicio || !fechaFin || fechaFin < fechaInicio) return { labels: [], huActivas: [], m2: [], costoAcumCLP: [] };
 
-  let totalDays = MSD.daysBetween(minInbound, fechaFin) + 1;
-  let start = minInbound;
+  let totalDays = MSD.daysBetween(fechaInicio, fechaFin) + 1;
+  let start = fechaInicio;
   if (totalDays > MSD.MAX_CHART_DAYS) {
-    start = MSD.addDays(fechaFin, -MSD.MAX_CHART_DAYS);
+    start = MSD.addDays(fechaFin, -(MSD.MAX_CHART_DAYS - 1));
     totalDays = MSD.MAX_CHART_DAYS;
   }
 
-  const tarifaDiariaUF = MSD.calculateDailyRate(config, config.mesComercialDias);
+  const tarifaDiariaHUCLP = (config.tarifaUFm2mes / config.mesComercialDias) * config.valorUF * config.m2PorHU;
+  const salidas = consolidated.map((hu) => MSD.determinarFechaOutboundHU(hu));
   const labels = [], huActivas = [], m2 = [], costoAcumCLP = [];
 
   for (let i = 0; i < totalDays; i++) {
     const day = MSD.addDays(start, i);
     let active = 0, cost = 0;
-    for (const hu of consolidated) {
-      if (!hu.dateInbound || hu.dateInbound > day) continue;
-      if (hu.dateOutbound && hu.dateOutbound <= day) {
-        // ya despachada a esta fecha: igual acumula costo hasta su salida
-        cost += MSD.daysBetween(hu.dateInbound, hu.dateOutbound) * tarifaDiariaUF * config.valorUF;
-        continue;
-      }
-      active++;
-      cost += MSD.daysBetween(hu.dateInbound, day) * tarifaDiariaUF * config.valorUF;
+    for (let idx = 0; idx < consolidated.length; idx++) {
+      const salida = salidas[idx];
+      const activaHoy = !salida || salida > day;
+      const outboundEfectivo = activaHoy ? day : salida;
+      if (outboundEfectivo >= fechaInicio) cost += (MSD.daysBetween(fechaInicio, outboundEfectivo) + 1) * tarifaDiariaHUCLP;
+      if (activaHoy) active++;
     }
     labels.push(MSD.formatDate(day));
     huActivas.push(active);

@@ -113,7 +113,7 @@ MSD.renderChartCostoPorProducto = function (hus, config) {
   const map = new Map();
   for (const hu of hus) {
     const key = hu.producto || hu.descripcion || 'Sin producto';
-    const costo = MSD.calculateHUCost(hu, config, null).costoAcumCLP;
+    const costo = MSD.calcularAlmacenamientoHU(hu, config.fechaInicialCobro, config.fechaCorte, config).costoCLP;
     map.set(key, (map.get(key) || 0) + costo);
   }
   const top = topN(map);
@@ -131,7 +131,7 @@ MSD.renderChartCostoPorLocation = function (hus, config) {
   const map = new Map();
   for (const hu of hus) {
     const key = hu.location || 'Sin ubicación';
-    const costo = MSD.calculateHUCost(hu, config, null).costoAcumCLP;
+    const costo = MSD.calcularAlmacenamientoHU(hu, config.fechaInicialCobro, config.fechaCorte, config).costoCLP;
     map.set(key, (map.get(key) || 0) + costo);
   }
   const top = topN(map);

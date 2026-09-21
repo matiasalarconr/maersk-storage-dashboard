@@ -154,6 +154,7 @@ function syncConfigInputsFromState() {
   document.getElementById('cfgFechaUF').value = MSD.toInputDate(MSD.parseISODateInput(c.fechaUF));
   document.getElementById('cfgFechaCorte').value = c.fechaCorte ? MSD.toInputDate(c.fechaCorte) : '';
   document.getElementById('cfgFechaProyeccion').value = c.fechaProyeccion ? MSD.toInputDate(c.fechaProyeccion) : '';
+  document.getElementById('cfgFechaInicialCobro').value = c.fechaInicialCobro ? MSD.toInputDate(c.fechaInicialCobro) : '';
 
   document.getElementById('cfgValorUF2').value = c.valorUF;
   document.getElementById('cfgFechaUF2').value = MSD.toInputDate(MSD.parseISODateInput(c.fechaUF));
@@ -165,6 +166,7 @@ function syncConfigInputsFromState() {
   document.getElementById('cfgDiaInicioCiclo').value = c.diaInicioCiclo;
   document.getElementById('cfgFechaCorte2').value = c.fechaCorte ? MSD.toInputDate(c.fechaCorte) : '';
   document.getElementById('cfgFechaProyeccion2').value = c.fechaProyeccion ? MSD.toInputDate(c.fechaProyeccion) : '';
+  document.getElementById('cfgFechaInicialCobro2').value = c.fechaInicialCobro ? MSD.toInputDate(c.fechaInicialCobro) : '';
   document.getElementById('cfgMetodologia').value = c.metodologiaDias;
 }
 
@@ -197,6 +199,12 @@ function initParamsBar() {
     MSD.persistConfig(MSD.state.config);
     MSD.recalculateAll();
   });
+  document.getElementById('cfgFechaInicialCobro').addEventListener('change', (e) => {
+    if (!e.target.value) return;
+    MSD.state.config.fechaInicialCobro = MSD.parseISODateInput(e.target.value);
+    MSD.persistConfig(MSD.state.config);
+    MSD.recalculateAll();
+  });
 }
 
 function initConfigTab() {
@@ -216,6 +224,8 @@ function initConfigTab() {
     if (fc) c.fechaCorte = MSD.parseISODateInput(fc);
     const fp = document.getElementById('cfgFechaProyeccion2').value;
     if (fp) c.fechaProyeccion = MSD.parseISODateInput(fp);
+    const fic = document.getElementById('cfgFechaInicialCobro2').value;
+    if (fic) c.fechaInicialCobro = MSD.parseISODateInput(fic);
     c.metodologiaDias = document.getElementById('cfgMetodologia').value;
     MSD.persistConfig(c);
     MSD.recalculateAll();
@@ -266,8 +276,8 @@ MSD.renderDashboard = function () {
   const dupEntre = MSD.state.consolidated.filter((h) => h.fuentes.length > 1).length;
   const conflictos = new Set(MSD.state.quality.map((q) => q.hu)).size;
   document.getElementById('csHUTotal').textContent = MSD.state.consolidated.length.toLocaleString('es-CL');
-  document.getElementById('csHUActivas').textContent = MSD.state.consolidated.filter((h) => MSD.getHUStatus(h) !== 'DESPACHADO').length.toLocaleString('es-CL');
-  document.getElementById('csHUDespachadas').textContent = MSD.state.consolidated.filter((h) => MSD.getHUStatus(h) === 'DESPACHADO').length.toLocaleString('es-CL');
+  document.getElementById('csHUActivas').textContent = MSD.state.consolidated.filter((h) => !MSD.determinarFechaOutboundHU(h)).length.toLocaleString('es-CL');
+  document.getElementById('csHUDespachadas').textContent = MSD.state.consolidated.filter((h) => !!MSD.determinarFechaOutboundHU(h)).length.toLocaleString('es-CL');
   document.getElementById('csDuplicadas').textContent = dupEntre.toLocaleString('es-CL');
   document.getElementById('csConflictos').textContent = conflictos.toLocaleString('es-CL');
 
@@ -284,7 +294,7 @@ MSD.renderDashboard = function () {
 
   renderSituacionActual(config);
   MSD.renderFacturacionTable(MSD.calculateFacturacionPeriodo(MSD.state.consolidated, config));
-  MSD.renderFacturacionDetailTable(MSD.buildFacturacionDetailRows(MSD.state.consolidated, config));
+  MSD.renderFacturacionDetailTable(MSD.buildDetailRows(MSD.state.consolidated, config));
 
   renderInfoBoxes(config, currentPeriod);
   renderSupuestos(config);
@@ -293,15 +303,14 @@ MSD.renderDashboard = function () {
   const kpis = MSD.calculateKPIs(filtered, config, currentPeriod);
   MSD.state.kpis = kpis;
   document.getElementById('kpiGrid').innerHTML = [
-    kpiCard('HU únicas totales', kpis.huUnicasTotales.toLocaleString('es-CL')),
-    kpiCard('HU activas', kpis.huActivas.toLocaleString('es-CL'), 'accent'),
+    kpiCard('Total HU consideradas', kpis.huUnicasTotales.toLocaleString('es-CL')),
+    kpiCard('HU actualmente almacenadas', kpis.huAlmacenadas.toLocaleString('es-CL'), 'accent'),
     kpiCard('HU despachadas', kpis.huDespachadas.toLocaleString('es-CL')),
     kpiCard('HU en picking', kpis.huEnPicking.toLocaleString('es-CL')),
-    kpiCard('m² ocupados', MSD.formatNumber(kpis.m2Ocupados, 1)),
-    kpiCard('Costo acumulado UF', MSD.formatUF(kpis.costoAcumUF)),
-    kpiCard('Costo acumulado CLP', MSD.formatCLP(kpis.costoAcumCLP), 'success'),
-    kpiCard('Costo período UF', MSD.formatUF(kpis.costoPeriodoUF)),
-    kpiCard('Costo período CLP', MSD.formatCLP(kpis.costoPeriodoCLP), 'success'),
+    kpiCard('m² actualmente almacenados', MSD.formatNumber(kpis.m2Ocupados, 1)),
+    kpiCard('Costo acumulado de almacenamiento', MSD.formatCLP(kpis.costoTotalCLP), 'success'),
+    kpiCard('Costo HU aún almacenadas', MSD.formatCLP(kpis.costoAlmacenadasCLP), 'accent'),
+    kpiCard('Costo HU ya despachadas', MSD.formatCLP(kpis.costoRetiradasCLP)),
     kpiCard('Costo diario actual CLP', MSD.formatCLP(kpis.costoDiarioActualCLP)),
     kpiCard('Ingresos HU período', kpis.ingresosHUPeriod.toLocaleString('es-CL')),
     kpiCard('Salidas HU período', kpis.salidasHUPeriod.toLocaleString('es-CL'), 'danger'),
@@ -316,7 +325,7 @@ MSD.renderDashboard = function () {
   MSD.renderCharts(filtered, config, MSD.state.dailySeries, MSD.state.periodSummary, MSD.state.aging);
   MSD.renderAgingTable(MSD.state.aging);
 
-  const detailRows = MSD.buildDetailRows(filtered, config, currentPeriod);
+  const detailRows = MSD.buildDetailRows(filtered, config);
   MSD.renderDetailTable(detailRows);
   MSD.renderQualityPanel(MSD.state.quality);
   MSD.renderPeriodSummaryTable(MSD.state.periodSummary);
@@ -326,19 +335,21 @@ MSD.renderDashboard = function () {
 
 function renderSituacionActual(config) {
   const s = MSD.calculateSituacionActual(MSD.state.consolidated, config);
-  document.getElementById('situacionFechaLabel').textContent = `— al ${MSD.formatDate(s.fechaCorte)} (día ${s.diaCiclo} del ciclo, inicia el ${config.diaInicioCiclo})`;
+  document.getElementById('situacionFechaLabel').textContent =
+    `— desde ${MSD.formatDate(s.fechaInicio)} (día 1) hasta hoy ${MSD.formatDate(s.fechaCorte)} (día ${s.diasTranscurridos})`;
   document.getElementById('situacionActualGrid').innerHTML = [
-    kpiCard('HU activas', s.huActivas.toLocaleString('es-CL'), 'accent'),
-    kpiCard('m² ocupados', MSD.formatNumber(s.m2Ocupados, 1)),
-    kpiCard('Costo del período a hoy (CLP)', MSD.formatCLP(s.costoPeriodoCLP), 'success'),
-    kpiCard('Costo acumulado histórico (CLP)', MSD.formatCLP(s.costoAcumCLP)),
+    kpiCard('HU actualmente almacenadas', s.huAlmacenadas.toLocaleString('es-CL'), 'accent'),
+    kpiCard('HU despachadas / retiradas', s.huRetiradas.toLocaleString('es-CL')),
+    kpiCard('m² actualmente almacenados', MSD.formatNumber(s.m2Ocupados, 1)),
+    kpiCard('Costo acumulado de almacenamiento (CLP)', MSD.formatCLP(s.costoTotalCLP), 'success'),
+    kpiCard('Costo HU aún almacenadas (CLP)', MSD.formatCLP(s.costoAlmacenadasCLP)),
+    kpiCard('Costo HU ya despachadas (CLP)', MSD.formatCLP(s.costoRetiradasCLP)),
     kpiCard('Costo diario actual (CLP)', MSD.formatCLP(s.costoDiarioActualCLP)),
   ].join('');
   document.getElementById('proximaFacturaGrid').innerHTML = [
     kpiCard('Próxima factura (día 28)', MSD.formatDate(s.fechaProximaFactura)),
     kpiCard('Días restantes del ciclo', s.diasRestantesPeriodo.toLocaleString('es-CL')),
-    kpiCard('Proyección costo período (UF)', MSD.formatUF(s.costoProyectadoPeriodoUF)),
-    kpiCard('Proyección costo período (CLP)', MSD.formatCLP(s.costoProyectadoPeriodoCLP), 'success'),
+    kpiCard('Proyección costo del período (CLP)', MSD.formatCLP(s.costoProyectadoCLP), 'success'),
   ].join('');
 }
 
@@ -352,24 +363,24 @@ function renderInfoBoxes(config, currentPeriod) {
   document.getElementById('infoFinanciero').innerHTML = `
     <div>UF utilizada: <b>${MSD.formatCLP(config.valorUF)}</b></div>
     <div>Fecha UF: <b>${MSD.formatDate(MSD.parseISODateInput(config.fechaUF))}</b></div>
-    <div>Fecha de corte: <b>${MSD.formatDate(config.fechaCorte)}</b></div>
+    <div>Fecha inicial de cobro (día 1): <b>${MSD.formatDate(config.fechaInicialCobro)}</b></div>
+    <div>Fecha de corte (hoy): <b>${MSD.formatDate(config.fechaCorte)}</b></div>
     <div>Fecha de proyección: <b>${MSD.formatDate(config.fechaProyeccion)}</b></div>
-    <div>Período actual: <b>${currentPeriod.label}</b></div>
+    <div>Período de facturación (ciclo 28→27): <b>${currentPeriod.label}</b></div>
     <div>Tarifa: <b>${config.tarifaUFm2mes} UF/m²/mes</b></div>`;
 }
 
 function renderSupuestos(config) {
-  const tarifaMensual = MSD.tarifaMensualUFporHU(config);
-  const tarifaDiaria = MSD.tarifaDiariaUFporHU(config);
+  const tarifaDiariaM2CLP = (config.tarifaUFm2mes / config.mesComercialDias) * config.valorUF;
   document.getElementById('supuestosGrid').innerHTML = `
     <div>1 HU = <b>${config.m2PorHU} m²</b></div>
     <div>Tarifa almacenamiento = <b>${config.tarifaUFm2mes} UF/m²/mes</b></div>
-    <div>Tarifa mensual HU = <b>${MSD.formatUF(tarifaMensual)}</b></div>
-    <div>Tarifa diaria HU = <b>${MSD.formatUF(tarifaDiaria, 4)}</b></div>
-    <div>Mes tarifario = <b>${config.mesComercialDias} días</b></div>
-    <div>Ciclo = <b>día ${config.diaInicioCiclo} al ${config.diaInicioCiclo - 1}</b></div>
-    <div>Día ${config.diaInicioCiclo} = <b>inicio del nuevo período</b></div>
-    <div>Metodología de días = <b>${config.metodologiaDias === 'A' ? 'A) Mes comercial 30 días' : 'B) Días reales del período'}</b></div>`;
+    <div>Tarifa diaria por m² = <b>${MSD.formatCLP(tarifaDiariaM2CLP)}</b></div>
+    <div>FECHA_INICIAL_COBRO (día 1) = <b>${MSD.formatDate(config.fechaInicialCobro)}</b></div>
+    <div>Días almacenamiento = <b>(fecha final − FECHA_INICIAL_COBRO) + 1</b></div>
+    <div>Costo HU = <b>1,8 m² × días × tarifa diaria/m²</b></div>
+    <div>Fecha final = <b>Picking / Despacho (la más temprana) o "hoy" si sigue almacenado</b></div>
+    <div>Mes tarifario = <b>${config.mesComercialDias} días</b></div>`;
 }
 
 function renderQuickRefs(config) {
@@ -419,13 +430,11 @@ function initProjectionButtons() {
 function initExportButtons() {
   document.getElementById('detailSearch').addEventListener('input', (e) => {
     MSD.tableState.search = e.target.value; MSD.tableState.page = 1;
-    const config = MSD.state.config;
-    const currentPeriod = MSD.getBillingPeriod(config.fechaCorte, config.diaInicioCiclo);
-    MSD.renderDetailTable(MSD.buildDetailRows(getFilteredHU(), config, currentPeriod));
+    MSD.renderDetailTable(MSD.buildDetailRows(getFilteredHU(), MSD.state.config));
   });
   document.getElementById('facturacionSearch').addEventListener('input', (e) => {
     MSD.facturacionTableState.search = e.target.value; MSD.facturacionTableState.page = 1;
-    MSD.renderFacturacionDetailTable(MSD.buildFacturacionDetailRows(MSD.state.consolidated, MSD.state.config));
+    MSD.renderFacturacionDetailTable(MSD.buildDetailRows(MSD.state.consolidated, MSD.state.config));
   });
   document.getElementById('btnExportDetailCSV').addEventListener('click', () => MSD.exportDetailCSV(MSD._lastDetailRows || []));
   document.getElementById('btnExportDetailJSON').addEventListener('click', () => MSD.exportDetailJSON());
@@ -511,31 +520,56 @@ function renderCycleTests(dayStart) {
 function renderTestCases(config) {
   renderCycleTests(config.diaInicioCiclo);
 
-  const corte = new Date(Date.UTC(2026, 8, 10));
-  const casoA = { dateInbound: new Date(Date.UTC(2026, 8, 1)), datePicking: null, dateOutbound: null };
-  const casoB = { dateInbound: new Date(Date.UTC(2026, 8, 1)), datePicking: new Date(Date.UTC(2026, 8, 8)), dateOutbound: null };
-  const casoC = { dateInbound: new Date(Date.UTC(2026, 8, 1)), datePicking: new Date(Date.UTC(2026, 8, 8)), dateOutbound: new Date(Date.UTC(2026, 8, 9)) };
-  const casoD = { dateInbound: new Date(Date.UTC(2026, 7, 20)), datePicking: null, dateOutbound: null };
-  const periodoSep = MSD.getBillingPeriod(corte, config.diaInicioCiclo);
+  // Fórmula: días = (fecha_final − FECHA_INICIAL_COBRO) + 1 · costo = 1,8 × días × tarifa diaria/m²
+  const fechaInicial = new Date(Date.UTC(2026, 7, 27)); // 27-08-2026 = Día 1 (ejemplo fijo de validación)
+  const testConfig = { ...config, fechaInicialCobro: fechaInicial };
 
-  const rows = [
-    ['A: Inbound 01-09, sin picking/outbound, corte 10-09', MSD.calculateAccumulatedDays(casoA, corte), '—'],
-    ['B: Inbound 01-09, Picking 08-09, sin outbound (corte en fin de cálculo = picking)', MSD.calculateAccumulatedDays(casoB, corte), '—'],
-    ['C: Inbound 01-09, Picking 08-09, Outbound 09-09 (prioriza outbound)', MSD.calculateAccumulatedDays(casoC, corte), '—'],
-    ['D: Inbound 20-08, corte 10-09 — acumulado desde 20-08', MSD.calculateAccumulatedDays(casoD, corte), MSD.calculatePeriodDays(casoD, periodoSep, corte) + ' (días período, desde 28-08)'],
+  const diasCases = [
+    ['Fecha inicial = fecha salida (27-08 → 27-08)', new Date(Date.UTC(2026, 7, 27)), 1],
+    ['Fecha salida = 28-08 (un día después)', new Date(Date.UTC(2026, 7, 28)), 2],
+    ['Fecha salida = 30-08 (ejemplo del negocio)', new Date(Date.UTC(2026, 7, 30)), 4],
   ];
+  const diasRows = diasCases.map(([label, fechaFinal, esperado]) => {
+    const dias = MSD.daysBetween(fechaInicial, fechaFinal) + 1;
+    const ok = dias === esperado ? '✓' : `✗ (esperado ${esperado})`;
+    return `<tr><td>${label}</td><td>${MSD.formatDate(fechaFinal)}</td><td>${dias}</td><td>${ok}</td></tr>`;
+  }).join('');
 
-  const ufA = 40864.55, ufB = 41250.36;
-  const diasE = 25;
-  const tarifaDiaria = MSD.tarifaDiariaUFporHU(config);
-  const costoUFCasoE = diasE * tarifaDiaria;
+  // Ejemplo exacto del negocio: HU 300265505, Picking 30-08-2026, tarifa diaria $355,829066666667/m².
+  const huEjemplo = { hu: '300265505', datePicking: new Date(Date.UTC(2026, 7, 30)), dateOutbound: null };
+  const configEjemplo = { ...testConfig, valorUF: 40864.55 }; // ajustar valorUF para reproducir ~$355,8291/m²/día
+  configEjemplo.valorUF = 355.829066666667 * configEjemplo.mesComercialDias / configEjemplo.tarifaUFm2mes;
+  const calcEjemplo = MSD.calcularAlmacenamientoHU(huEjemplo, fechaInicial, new Date(Date.UTC(2026, 8, 21)), configEjemplo);
 
-  document.getElementById('calcTestOutput').innerHTML = `<table class="data-table"><thead><tr><th>Caso</th><th>Días acumulados</th><th>Nota</th></tr></thead><tbody>
-      ${rows.map((r) => `<tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td></tr>`).join('')}
-    </tbody></table>
-    <p class="hint" style="margin-top:12px;">Caso E — el costo en UF no cambia si cambia la UF, solo cambia el CLP:
-    ${diasE} días × ${MSD.formatUF(tarifaDiaria, 4)}/día = <b>${MSD.formatUF(costoUFCasoE)}</b> →
-    con UF=${MSD.formatCLP(ufA)}: <b>${MSD.formatCLP(costoUFCasoE * ufA)}</b> · con UF=${MSD.formatCLP(ufB)}: <b>${MSD.formatCLP(costoUFCasoE * ufB)}</b></p>`;
+  // Validación: outbound anterior a la fecha inicial de cobro → costo 0.
+  const huAnterior = { hu: 'EJEMPLO-ANTERIOR', datePicking: new Date(Date.UTC(2026, 7, 20)), dateOutbound: null };
+  const calcAnterior = MSD.calcularAlmacenamientoHU(huAnterior, fechaInicial, config.fechaCorte, testConfig);
+
+  // Validación: HU sin picking/outbound sigue almacenada y usa "hoy" (fecha de corte) como fin.
+  const huActiva = { hu: 'EJEMPLO-ACTIVA', datePicking: null, dateOutbound: null };
+  const calcActiva = MSD.calcularAlmacenamientoHU(huActiva, fechaInicial, config.fechaCorte, testConfig);
+
+  document.getElementById('calcTestOutput').innerHTML = `
+    <p class="hint">Validación de conteo de días (FECHA_INICIAL_COBRO = 27-08-2026 = Día 1, "no quiero que el 27 sea Día 0"):</p>
+    <table class="data-table"><thead><tr><th>Caso</th><th>Fecha final</th><th>Días</th><th>OK</th></tr></thead>
+      <tbody>${diasRows}</tbody></table>
+
+    <p class="hint" style="margin-top:16px;">Ejemplo del negocio — HU ${calcEjemplo ? huEjemplo.hu : ''}, Fecha inicial 27-08-2026, Picking 30-08-2026, tarifa diaria ≈ $355,8291/m²/día:</p>
+    <table class="data-table"><thead><tr><th>HU</th><th>Fecha Inicio</th><th>Fecha Outbound utilizada</th><th>Días</th><th>m²</th><th>Tarifa diaria</th><th>Costo</th></tr></thead>
+      <tbody><tr>
+        <td>${huEjemplo.hu}</td><td>${MSD.formatDate(fechaInicial)}</td><td>${MSD.formatDate(calcEjemplo.fechaOutboundUtilizada)}</td>
+        <td>${calcEjemplo.diasAlmacenamiento}</td><td>${calcEjemplo.m2}</td><td>${MSD.formatCLP(calcEjemplo.tarifaDiariaM2CLP)}</td><td><b>${MSD.formatCLP(calcEjemplo.costoCLP)}</b></td>
+      </tr></tbody></table>
+    <p class="hint">Esperado ≈ 1,8 × 4 × $355,83 ≈ $2.561,97. Calculado: <b>${MSD.formatCLP(calcEjemplo.costoCLP)}</b>.</p>
+
+    <p class="hint" style="margin-top:16px;">Validaciones de borde:</p>
+    <table class="data-table"><thead><tr><th>Caso</th><th>Días</th><th>Costo CLP</th><th>Resultado esperado</th></tr></thead>
+      <tbody>
+        <tr><td>Fecha outbound (20-08) anterior a FECHA_INICIAL_COBRO (27-08) → costo debe ser 0</td>
+          <td>${calcAnterior.diasAlmacenamiento}</td><td>${MSD.formatCLP(calcAnterior.costoCLP)}</td><td>${calcAnterior.diasAlmacenamiento === 0 ? '✓ 0 días, $0' : '✗'}</td></tr>
+        <tr><td>HU sin Picking/Despacho (sigue almacenada) → usa fecha de corte (hoy) como fin</td>
+          <td>${calcActiva.diasAlmacenamiento}</td><td>${MSD.formatCLP(calcActiva.costoCLP)}</td><td>estaAlmacenado = ${calcActiva.estaAlmacenado}</td></tr>
+      </tbody></table>`;
 }
 
 /* ---------------------------------------------------------------------------

@@ -47,6 +47,7 @@ MSD.buildNormalizedJSON = function () {
       dias_mes_tarifa: config.mesComercialDias,
       dia_inicio_periodo: config.diaInicioCiclo,
       fecha_corte: MSD.toInputDate(config.fechaCorte),
+      fecha_inicial_cobro: MSD.toInputDate(config.fechaInicialCobro),
       metodologia_dias: config.metodologiaDias,
     },
     hu: MSD.state.consolidated.map((hu) => ({
@@ -114,13 +115,9 @@ MSD.exportProjectionCSV = function (projection) {
     fechaProyeccion: MSD.formatDate(projection.fechaProyeccion),
     huActivas: projection.huActivas,
     m2Ocupados: projection.m2Ocupados,
-    tarifaDiariaUF: projection.tarifaDiariaUF,
     tarifaDiariaCLP: projection.tarifaDiariaCLP,
-    costoRealAcumUF: projection.costoRealAcumUF,
     costoRealAcumCLP: projection.costoRealAcumCLP,
-    costoAdicionalUF: projection.costoAdicionalUF,
     costoAdicionalCLP: projection.costoAdicionalCLP,
-    costoTotalUF: projection.costoTotalUF,
     costoTotalCLP: projection.costoTotalCLP,
   }];
   const columns = Object.keys(rows[0]).map((k) => ({ key: k, label: k }));

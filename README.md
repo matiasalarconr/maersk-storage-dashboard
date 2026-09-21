@@ -31,9 +31,12 @@ Responder rápidamente preguntas como:
 - **Consolidación por HU única**: una HU puede tener varias filas (distintos lotes,
   productos o cantidades); solo se cobra almacenamiento **una vez por HU**.
 - Valor UF **editable manualmente** (con fecha UF), independiente del contenido de los Excel.
-- Ciclo de facturación **día 28 → día 27** del mes siguiente.
-- Días acumulados vs. días del período de facturación (dos funciones separadas).
-- Fecha de corte y fecha de proyección configurables.
+- **FECHA_INICIAL_COBRO configurable** (Día 1 del cobro para todas las HU, no se usa
+  `DATE INBOUND`). Fecha de salida = Picking/Despacho más temprano, o "hoy" si la HU
+  sigue almacenada.
+- Ciclo **día 28 → día 27** del mes siguiente para agrupar ingresos/salidas por período
+  y calcular la próxima factura.
+- Fecha de corte (hoy) y fecha de proyección configurables.
 - Proyección de costos con botones rápidos (cierre actual, próximo cierre, +30/60/90 días).
 - Simulador de costos y simulador de "qué pasa si retiro X HU".
 - Panel de **Calidad de Datos**: detecta HU duplicadas, fechas inconsistentes, HU sin
@@ -101,6 +104,11 @@ fechas, costos, m², proyecciones, KPIs, tablas, gráficos y calidad de datos).
 
 ## Lógica de negocio
 
+**Toda la app usa una única fuente de verdad para el costo de almacenamiento:**
+`MSD.calcularAlmacenamientoHU()` en `js/calculations.js`. Ningún otro lugar del
+código recalcula el costo de otra manera (KPIs, tabla de Detalle, Facturación,
+antigüedad, proyección y gráficos "por día" consumen esa misma función).
+
 ### Unidad de almacenamiento
 
 - `1 HU = 1,8 m²`.
@@ -108,78 +116,76 @@ fechas, costos, m², proyecciones, KPIs, tablas, gráficos y calidad de datos).
   cantidades). Esas filas se **consolidan en una sola HU** para efectos de ocupación
   y costo; el detalle de productos/lotes se conserva para el desglose.
 
-### Tarifa
+### FECHA_INICIAL_COBRO — no se usa DATE INBOUND para iniciar el cobro
 
-- Almacenamiento Warehouse: `0,26 UF / m² / mes`.
-- Tarifa mensual por HU: `1,8 × 0,26 = 0,468 UF/HU/mes`.
-- Tarifa diaria (mes comercial de 30 días): `0,468 / 30 = 0,0156 UF/HU/día`.
-- El **valor UF es siempre editable** en la aplicación; los costos en UF nunca cambian
-  al modificar el valor UF, solo cambian los montos en CLP.
+El cobro de almacenamiento **no** empieza a contar desde `DATE INBOUND` de cada HU.
+Existe un único parámetro configurable, `FECHA_INICIAL_COBRO` (por defecto
+`27-08-2026`), que es el **Día 1** del cobro para todas las HU por igual. Es editable
+en la barra de parámetros y en **Configuración**.
 
-### `DATE INBOUND`, `DATE PICKING`, `DATE OUTBOUND`
+### Fecha de salida (fin del cobro) por HU
 
-- `DATE INBOUND`: inicio del almacenamiento de la HU.
-- Fecha de fin (histórica), en orden de prioridad: `DATE OUTBOUND` → `DATE PICKING` →
-  fecha de corte.
-- Para el cálculo histórico, la fecha de fin efectiva es siempre
-  `mínimo(fecha_fin_real, fecha_de_corte)`. Si `DATE INBOUND` es posterior a la fecha
-  de corte, la HU no genera costo.
+1. Si la HU tiene `DATE PICKING` válida → candidata.
+2. Si tiene `DATE OUTBOUND` (despacho) válida → candidata.
+3. Si existen ambas, se usa **la más temprana** (la primera señal real de que el
+   producto dejó de estar almacenado).
+4. Si no existe ninguna, la HU **sigue almacenada** y se usa la fecha de corte (hoy)
+   como fin de cálculo. Al presionar "Recalcular" o el botón **Hoy**, esto se
+   actualiza a la fecha actual.
 
-### Ciclo de facturación (día 28 → 27)
+### Cálculo de días y costo
 
-El día 28 de cada mes es el **día 0** del nuevo período de facturación. Por ejemplo:
+```
+dias = 0                                  si fecha_final < FECHA_INICIAL_COBRO
+dias = (fecha_final − FECHA_INICIAL_COBRO) + 1   en caso contrario  (FECHA_INICIAL_COBRO = Día 1)
 
-- Período septiembre: `28-08-2026 → 27-09-2026`
-- Período octubre: `28-09-2026 → 27-10-2026`
+costo_HU = 1,8 m² × dias × tarifa_diaria_m2
+tarifa_diaria_m2 = (tarifa_UF_m2_mes / mes_comercial_dias) × valor_UF
+```
 
-La lógica está centralizada en `getBillingPeriod()` (`js/calculations.js`). La pestaña
-**Pruebas de Cálculo** de la aplicación muestra en vivo el resultado de evaluar los
-días 27, 28 y 29 de un mes, para validar que no hay errores de +1 día.
+Ejemplo validado en la pestaña **Pruebas de Cálculo**: HU con `FECHA_INICIAL_COBRO`
+27-08-2026 y Picking 30-08-2026 → 4 días (27, 28, 29, 30) × 1,8 m² × tarifa diaria.
 
-### Dos tipos de días
+### Validaciones
 
-- **Días acumulados**: desde `DATE INBOUND` hasta la fecha de fin efectiva (sin
-  restringir al período de facturación actual).
-- **Días del período**: solo los días que caen dentro del período de facturación
-  seleccionado (intersección entre la estadía de la HU y `[período.start, período.end]`).
+- Días nunca negativos; si la fecha de salida es anterior a `FECHA_INICIAL_COBRO`,
+  el costo es 0.
+- Fechas vacías/inválidas se tratan como ausentes (no rompen el cálculo).
+- El cálculo nunca modifica los datos originales del Excel; trabaja siempre sobre
+  una capa derivada (HU consolidadas + resultado de `calcularAlmacenamientoHU`).
+- La suma de los costos individuales de todas las HU siempre es igual al costo total
+  mostrado en los KPIs (verificado en las pruebas contra datos reales).
 
-Ambas se calculan con funciones separadas (`calculateAccumulatedDays` y
-`calculatePeriodDays`) para que sean fáciles de auditar por separado.
+### Ciclo 28 → 27 (solo para agrupar/etiquetar, no para calcular el cobro)
 
-### Metodología de días
-
-- **A) Mes comercial de 30 días** (por defecto): la tarifa diaria siempre se calcula
-  como `tarifa mensual / 30`, independientemente de cuántos días reales tenga el mes o
-  el período.
-- **B) Días reales del período**: para el costo del período, la tarifa diaria se
-  recalcula como `tarifa mensual / (días reales del período de facturación)`.
+El ciclo de facturación día 28 → 27 se sigue usando para **agrupar** ingresos/salidas
+de HU por período (pestaña **Resumen por Período**) y para calcular la **próxima
+factura** (Situación Actual). El costo de Almacenamiento con la metodología nueva
+solo puede calcularse para el período vigente (el que usa `FECHA_INICIAL_COBRO`);
+los períodos ya cerrados muestran únicamente ingresos/salidas de HU, porque no existe
+una fecha de inicio de cobro válida para reconstruir su costo retroactivamente.
 
 ### Facturación por período (vista reducida)
 
-Muestra, por cada período de facturación (día 28 → 27), tres montos en CLP:
+Muestra el período vigente (desde `FECHA_INICIAL_COBRO` hasta hoy) con tres montos
+en CLP:
 
 - **Inbound**: `(HU con DATE INBOUND dentro del período) × 0,076 UF/pallet × valor UF`
   (tarifa "Ingreso carga paletizada - Inbound" de la Tabla N°1 de servicios Warehouse).
 - **Outbound**: `(HU con DATE OUTBOUND dentro del período) × 0,076 UF/pallet × valor UF`
   (tarifa "Despacho carga Paletizada - Outbound").
-- **Almacenamiento**: el mismo costo del período calculado en el resto de la app
-  (días del período × tarifa diaria × valor UF).
+- **Almacenamiento**: `calcularAlmacenamientoHU()` sumado sobre todas las HU.
 
 Ambas tarifas (Inbound/Outbound) son editables en **Configuración**. Como la hoja
 `INVENTARIO` no siempre trae un número de pallet confiable por fila, se asume
-**1 HU = 1 unidad facturable** para Inbound/Outbound; si tu operación cuenta pallets
-de forma distinta a las HU, ajusta la tarifa o pide agregar el conteo real de pallets.
-
-El primer período de la lista muestra como fecha de inicio la fecha real de la
-primera HU ingresada (no el día 28 teórico) cuando no había nada almacenado antes de
-esa fecha, igual que en una factura real.
+**1 HU = 1 unidad facturable** para Inbound/Outbound.
 
 ### Proyección
 
-Para las HU activas a la fecha de corte, se calcula el costo real acumulado hasta el
-corte y se le suma el costo adicional proyectado hasta la fecha de proyección
-seleccionada (con botones rápidos: cierre actual, próximo cierre, +30/+60/+90 días, o
-fecha personalizada).
+Para las HU aún almacenadas a la fecha de corte, se toma su costo actual
+(`calcularAlmacenamientoHU`) y se le suma el costo adicional proyectado hasta la
+fecha de proyección seleccionada (con botones rápidos: cierre actual, próximo
+cierre, +30/+60/+90 días, o fecha personalizada), usando la misma tarifa diaria.
 
 ## Ejecutar localmente
 

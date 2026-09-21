@@ -50,9 +50,18 @@
     </div>
   </div>
   <div class="params-block">
+    <h3>FECHA_INICIAL_COBRO (Día 1)</h3>
+    <div class="params-row">
+      <label>Fecha inicial de cobro
+        <input type="date" id="cfgFechaInicialCobro">
+      </label>
+      <span class="hint">Todas las HU empiezan a cobrarse desde esta fecha (no desde su Inbound).</span>
+    </div>
+  </div>
+  <div class="params-block">
     <h3>PARÁMETROS</h3>
     <div class="params-row">
-      <label>Fecha de corte
+      <label>Fecha de corte (hoy)
         <input type="date" id="cfgFechaCorte">
       </label>
       <button id="btnFechaCorteHoy" class="btn btn-ghost" title="Fijar fecha de corte a hoy" style="align-self:flex-end;">Hoy</button>
@@ -95,7 +104,8 @@
       <div>1 HU = <b>1,8 m²</b></div>
       <div>Tarifa = <b>0,26 UF/m²/mes</b></div>
       <div>UF de referencia = <b>$40.864,55</b></div>
-      <div>Ciclo facturación = <b>día 28 al 27</b></div>
+      <div>FECHA_INICIAL_COBRO (Día 1) = <b>27-08-2026</b></div>
+      <div>Días = <b>(fecha final − FECHA_INICIAL_COBRO) + 1</b></div>
       <div>Mes comercial = <b>30 días</b></div>
     </div>
     <p class="hint">Ingresa el valor UF que deseas utilizar para el cálculo en el panel superior "VALOR UF DEL CÁLCULO".</p>
@@ -163,7 +173,7 @@
     </div>
 
     <div class="table-toolbar">
-      <span class="hint">Inbound = HU con DATE INBOUND en el período · Outbound = HU con DATE OUTBOUND (despacho) en el período · Almacenamiento = costo del período según fechas de corte. Cada día 28 se emite la factura y el ciclo reinicia como día 0.</span>
+      <span class="hint">Período vigente (desde FECHA_INICIAL_COBRO hasta hoy). Inbound = HU ingresadas en el período · Outbound = HU despachadas en el período · Almacenamiento = 1,8 m² × días × tarifa diaria, desde FECHA_INICIAL_COBRO. Cada día 28 se emite la factura y el ciclo reinicia como día 0.</span>
       <button class="btn btn-ghost" id="btnExportFacturacionCSV">Exportar facturación CSV</button>
     </div>
     <div id="facturacionWrap" class="invoice-grid"></div>
@@ -322,6 +332,7 @@
       <label>Día inicio ciclo <input type="number" id="cfgDiaInicioCiclo" min="1" max="28"></label>
       <label>Fecha de corte <input type="date" id="cfgFechaCorte2"></label>
       <label>Fecha de proyección <input type="date" id="cfgFechaProyeccion2"></label>
+      <label>Fecha inicial de cobro (Día 1) <input type="date" id="cfgFechaInicialCobro2"></label>
       <label>Metodología de días
         <select id="cfgMetodologia">
           <option value="A">A) Mes comercial de 30 días</option>

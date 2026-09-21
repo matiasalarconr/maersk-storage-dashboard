@@ -17,25 +17,30 @@ MSD.DEFAULT_CONFIG = {
   metodologiaDias: 'A', // 'A' = mes comercial 30 días, 'B' = días reales del período
   fechaCorte: null,        // se fija a "hoy" (o última fecha de datos) al cargar inventario
   fechaProyeccion: null,   // se fija al próximo cierre al cargar inventario
+  fechaInicialCobro: null, // FECHA_INICIAL_COBRO — única fecha de inicio de cobro (día 1). Se fija por defecto al cargar.
 };
+
+/** Valor por defecto de FECHA_INICIAL_COBRO si nunca se ha configurado: 27-08-2026. */
+MSD.DEFAULT_FECHA_INICIAL_COBRO = () => new Date(Date.UTC(2026, 7, 27));
 
 MSD.LS_KEY = 'msd_config_v1';
 
 /** Carga configuración persistida (solo parámetros, nunca inventario/Excel). */
 MSD.loadPersistedConfig = function () {
+  let merged;
   try {
     const raw = localStorage.getItem(MSD.LS_KEY);
-    if (!raw) return { ...MSD.DEFAULT_CONFIG };
-    const saved = JSON.parse(raw);
-    const merged = { ...MSD.DEFAULT_CONFIG, ...saved };
-    // JSON.stringify serializa los Date como texto ISO; hay que reconstruirlos.
-    if (merged.fechaCorte) merged.fechaCorte = new Date(merged.fechaCorte);
-    if (merged.fechaProyeccion) merged.fechaProyeccion = new Date(merged.fechaProyeccion);
-    return merged;
+    const saved = raw ? JSON.parse(raw) : {};
+    merged = { ...MSD.DEFAULT_CONFIG, ...saved };
   } catch (e) {
     console.warn('No se pudo leer configuración persistida:', e);
-    return { ...MSD.DEFAULT_CONFIG };
+    merged = { ...MSD.DEFAULT_CONFIG };
   }
+  // JSON.stringify serializa los Date como texto ISO; hay que reconstruirlos.
+  if (merged.fechaCorte) merged.fechaCorte = new Date(merged.fechaCorte);
+  if (merged.fechaProyeccion) merged.fechaProyeccion = new Date(merged.fechaProyeccion);
+  merged.fechaInicialCobro = merged.fechaInicialCobro ? new Date(merged.fechaInicialCobro) : MSD.DEFAULT_FECHA_INICIAL_COBRO();
+  return merged;
 };
 
 MSD.persistConfig = function (config) {
@@ -52,6 +57,7 @@ MSD.persistConfig = function (config) {
       metodologiaDias: config.metodologiaDias,
       fechaCorte: config.fechaCorte,
       fechaProyeccion: config.fechaProyeccion,
+      fechaInicialCobro: config.fechaInicialCobro,
     };
     localStorage.setItem(MSD.LS_KEY, JSON.stringify(toSave));
   } catch (e) {
